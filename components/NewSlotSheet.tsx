@@ -15,7 +15,8 @@
  *     timeline rather than in the sheet (no dim; an outside tap closes it);
  *     you tap the activity afterward to say who it's with. EDITING (with an
  *     index) is the full sheet: that same field plus the who-with card and a
- *     red "Delete activity". In BOTH, focusing the name field drops down its
+ *     red "Delete activity". Picking a suggestion fills the name + emoji and
+ *     collapses the list. In BOTH, focusing the name field drops down its
  *     suggestions (others planning this period / your past picks / others'
  *     past picks), grouped + narrowed by what's typed. Activities already on
  *     the slot are hidden from it (except the one being edited); only the
@@ -267,8 +268,10 @@ export default function NewSlotSheet() {
   const [activityIndex, setActivityIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<ActivityDraft>(EMPTY_DRAFT);
   const [emojiOpen, setEmojiOpen] = useState(false);
-  // The activity-name field's suggestion dropdown is open while it's focused.
-  const [nameFocused, setNameFocused] = useState(false);
+  // The activity-name field's suggestion dropdown. Opens with the add panel
+  // (it's the point of that panel) and on a tap in the field; collapses once a
+  // suggestion is picked, or on blur.
+  const [suggestOpen, setSuggestOpen] = useState(false);
   // Viewport y the ADD panel hangs from: the bottom of the "+" that opened it,
   // already scrolled to the top of the screen (see scrollAnchorToTop). Null =
   // pin to the top of the viewport.
@@ -358,7 +361,7 @@ export default function NewSlotSheet() {
           : EMPTY_DRAFT,
       );
       setEmojiOpen(false);
-      setNameFocused(false);
+      setSuggestOpen(detail?.mode === "activity" && (detail?.activityIndex ?? null) === null);
       setCalendarMonth(monthForSlot(slot));
       // Editing time: expand to the slot's real month ONLY when its picked
       // days fall outside the compact grid's rolling 3 weeks from today; if
@@ -480,14 +483,12 @@ export default function NewSlotSheet() {
   const setEmoji = useCallback((emoji: string) => {
     setDraft((prev) => ({ ...prev, emoji }));
   }, []);
-  // Tapping a suggestion names the activity (and takes its emoji); tapping the
-  // one already chosen clears the name again.
+  // Tapping a suggestion names the activity (and takes its emoji), then
+  // collapses the list — the pick IS the confirmation, so there's nothing left
+  // to check off.
   const pickSuggestion = useCallback((s: ActivitySuggestion) => {
-    setDraft((prev) =>
-      nameKey(prev.name) === nameKey(s.name)
-        ? { ...prev, name: "" }
-        : { ...prev, name: s.name, emoji: s.emoji ?? prev.emoji },
-    );
+    setDraft((prev) => ({ ...prev, name: s.name, emoji: s.emoji ?? prev.emoji }));
+    setSuggestOpen(false);
   }, []);
 
   const patchEntry = useCallback((patch: Partial<EditableEntry>) => {
@@ -714,7 +715,7 @@ export default function NewSlotSheet() {
           value={draft.name}
           onChange={(e) => setName(e.target.value)}
           onFocus={(e) => {
-            setNameFocused(true);
+            setSuggestOpen(true);
             // Pre-filled (edit mode): select all so the first keystroke
             // replaces the name — and the dropdown, which narrows on
             // what's typed, opens back up to the full list.
@@ -722,21 +723,23 @@ export default function NewSlotSheet() {
           }}
           onBlur={(e) => {
             setName(e.target.value.trim());
-            setNameFocused(false);
+            setSuggestOpen(false);
           }}
+          // Re-tapping an already-focused field fires no focus event, so this
+          // is the only way back to the list after a pick collapsed it.
+          onClick={() => setSuggestOpen(true)}
           placeholder="Activity"
           aria-label="Activity name"
           className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
         />
       </div>
-      {/* The field's own dropdown: suggested activities
-          grouped + labeled by priority, narrowed by what's typed.
-          Tapping one names the draft (and takes its emoji); tapping
-          the chosen one clears it. Only the "you've picked before"
-          group carries an ✕ to delete (behind a confirmation →
-          blacklist); the others (things other people are doing) can't
-          be deleted. */}
-      {(nameFocused || isAddActivity) && hasSuggestions && (
+      {/* The field's own dropdown: suggested activities grouped +
+          labeled by priority, narrowed by what's typed. Tapping one
+          names the draft (and takes its emoji) and collapses the list.
+          Only the "you've picked before" group carries an ✕ to delete
+          (behind a confirmation → blacklist); the others (things other
+          people are doing) can't be deleted. */}
+      {suggestOpen && hasSuggestions && (
         <div className="mt-3 max-h-64 overflow-y-auto overscroll-contain divide-y divide-gray-200 dark:divide-gray-700">
           {SUGGESTION_GROUPS.map((group) => {
             const items = filteredSuggestions[group.key];
@@ -749,32 +752,14 @@ export default function NewSlotSheet() {
                 </p>
                 <ul>
                   {items.map((activity) => {
-                    const checked = nameKey(draft.name) === nameKey(activity.name);
                     return (
                       <li
                         key={activity.name}
                         className="flex items-center gap-3 h-11"
-                        // Commit before the input blurs (blur closes
-                        // the dropdown).
+                        // Commit before the input blurs (blur collapses the
+                        // dropdown).
                         onMouseDown={(e) => e.preventDefault()}
                       >
-                        <button
-                          type="button"
-                          role="checkbox"
-                          aria-checked={checked}
-                          onClick={() => pickSuggestion(activity)}
-                          className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                            checked
-                              ? "bg-blue-500 border-blue-500 dark:bg-blue-500 dark:border-blue-500"
-                              : "border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900"
-                          }`}
-                        >
-                          {checked && (
-                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </button>
                         <button
                           type="button"
                           onClick={() => pickSuggestion(activity)}
