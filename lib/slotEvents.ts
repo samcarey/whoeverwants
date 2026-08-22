@@ -19,6 +19,21 @@ import type { Slot } from "@/lib/api/slots";
 
 export const SLOT_SHEET_OPEN_EVENT = "whoeverwants:slot-sheet-open";
 export const SLOTS_CHANGED_EVENT = "whoeverwants:slots-changed";
+/** The add-activity panel opened / closed — the timeline hides its column
+ *  headers while it's up so the tapped row's day + time sit at the very top.
+ *  detail: boolean (active). */
+export const SLOT_ADD_PANEL_EVENT = "whoeverwants:slot-add-panel";
+
+/** CSS var holding the column headers' sticky height. The day divider parks at
+ *  it and each row's time parks under that, so zeroing it (while the add panel
+ *  is up, with the headers hidden) slides both tiers to the top of the screen
+ *  without touching the document's height. */
+export const PLAYLIST_HEADER_H_VAR = "--playlist-header-h";
+
+export function setAddPanelActive(active: boolean): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<boolean>(SLOT_ADD_PANEL_EVENT, { detail: active }));
+}
 
 export type SlotSheetMode = "create" | "time" | "activity";
 
@@ -56,31 +71,43 @@ export function openSlotSheet(
   );
 }
 
-/** Scroll `el` (the tapped "+") to the top of the screen and return its
- *  settled viewport bottom, so the add-activity panel can sit right under it.
- *  Runs BEFORE the sheet opens: once it's open the body is scroll-locked at
- *  whatever position we leave here. The scroll clamps at the document end, so
- *  the returned value — not the assumed top — is what the panel hangs from.
+/** Smooth-scroll the tapped row so its day divider + time land at the top of
+ *  the screen — the column headers drop out of the flow, pulling everything up
+ *  by their height and shifting both sticky tiers to the top — and return the
+ *  viewport y the add panel should hang from: just under that row's time.
  *
- *  `behavior: "instant"` is load-bearing: the caller measures immediately
- *  afterwards, and a smooth scroll would still be animating. */
-export function scrollAnchorToTop(el: HTMLElement): number {
-  const gap = 8;
-  const top = el.getBoundingClientRect().top;
-  window.scrollTo({ top: Math.max(0, window.scrollY + top - safeAreaTop() - gap), behavior: "instant" });
-  return el.getBoundingClientRect().bottom;
-}
+ *  Everything is computed from the row's NORMAL-FLOW position, before the
+ *  scroll starts — the time chip may already be stuck, so its current rect
+ *  isn't a reliable input, and a smooth scroll can't be measured after the
+ *  fact. When the page can't scroll far enough (the row is near the document
+ *  end) the shortfall is added back, so the panel still lands under the row's
+ *  real resting place rather than an assumed one.
+ */
+export function anchorRowForAddPanel(plusEl: HTMLElement): number | null {
+  const card = plusEl.closest<HTMLElement>("[data-slot-card]");
+  const chip = card?.querySelector<HTMLElement>("[data-slot-time]");
+  if (!card || !chip) return null;
 
-/** env(safe-area-inset-top) in px, via a throwaway probe — the notch band the
- *  anchor has to clear. 0 on every non-notched surface. */
-function safeAreaTop(): number {
-  const probe = document.createElement("div");
-  probe.style.cssText =
-    "position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top,0px);pointer-events:none;opacity:0;";
-  document.body.appendChild(probe);
-  const h = probe.getBoundingClientRect().height;
-  probe.remove();
-  return h;
+  const headerH = document.querySelector<HTMLElement>("[data-playlist-headers]")?.offsetHeight ?? 0;
+  // Where the chip parks once the headers are hidden.
+  const chipTop = (parseFloat(getComputedStyle(chip).top) || 0) - headerH;
+  const cardPadTop = parseFloat(getComputedStyle(card).paddingTop) || 0;
+  const chipH = chip.getBoundingClientRect().height;
+
+  // The headers are about to leave the flow, pulling every row up by their
+  // height — so the page needs that much LESS scroll, and has that much less
+  // to give. (They sit above every row, so the shift is uniform.)
+  const want =
+    window.scrollY + card.getBoundingClientRect().top - (chipTop - cardPadTop) - headerH;
+  const maxScroll = Math.max(
+    0,
+    document.documentElement.scrollHeight - headerH - window.innerHeight,
+  );
+  const target = Math.min(Math.max(0, want), maxScroll);
+  window.scrollTo({ top: target, behavior: "smooth" });
+
+  // The chip's settled BOTTOM — the panel adds its own gap under it.
+  return chipTop + Math.max(0, want - target) + chipH;
 }
 
 /** Tell the Playlist tab a slot was created / edited / deleted. */

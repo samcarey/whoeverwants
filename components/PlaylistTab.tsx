@@ -21,7 +21,12 @@ import {
   type SlotWindowEntry,
   edgeToEdgeStyle,
 } from "@/lib/slotUtils";
-import { SLOTS_CHANGED_EVENT, openSlotSheet } from "@/lib/slotEvents";
+import {
+  SLOTS_CHANGED_EVENT,
+  SLOT_ADD_PANEL_EVENT,
+  PLAYLIST_HEADER_H_VAR,
+  openSlotSheet,
+} from "@/lib/slotEvents";
 import SlotCard from "@/components/SlotCard";
 
 export default function PlaylistTab() {
@@ -31,6 +36,15 @@ export default function PlaylistTab() {
   // must paint settled content on its first commit" rule in CLAUDE.md).
   const [slots, setSlots] = useState<Slot[] | null>(() => getCachedSlots());
   const [error, setError] = useState(false);
+  // While the add-activity panel is up the column headers hide and both sticky
+  // tiers below them shift to the top of the screen (PLAYLIST_HEADER_H_VAR),
+  // so the tapped row's day + time are what sits under the panel.
+  const [addingActivity, setAddingActivity] = useState(false);
+  useEffect(() => {
+    const onPanel = (e: Event) => setAddingActivity(!!(e as CustomEvent<boolean>).detail);
+    window.addEventListener(SLOT_ADD_PANEL_EVENT, onPanel);
+    return () => window.removeEventListener(SLOT_ADD_PANEL_EVENT, onPanel);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -111,7 +125,10 @@ export default function PlaylistTab() {
       {/* Heights are load-bearing — the tiers below offset off them:
           7.6px + 28px line + 4px = 39.6px. */}
       <div
-        className="sticky top-0 z-30 flex items-center bg-background pt-[7.6px] pb-1"
+        data-playlist-headers=""
+        className={`sticky top-0 z-30 flex items-center bg-background pt-[7.6px] pb-1 ${
+          addingActivity ? "hidden" : ""
+        }`}
         style={edgeToEdgeStyle("0.25rem", "0.75rem")}
       >
         {/* Each label is centered over its own column. The rows' left column
@@ -148,7 +165,10 @@ export default function PlaylistTab() {
   );
 
   return (
-    <div className="pt-2">
+    <div
+      className="pt-2"
+      style={{ [PLAYLIST_HEADER_H_VAR]: addingActivity ? "0px" : "39.6px" } as React.CSSProperties}
+    >
       {header}
       {entries.length === 0 && (
         <div className="text-center py-8">
@@ -173,7 +193,7 @@ export default function PlaylistTab() {
               takes its place — that one paints over it, being later in the
               DOM at the same z. z-20 sits above the cards' emoji (z-10) and
               below the column headers (z-30). */}
-          <div className="sticky top-[39.6px] z-20">
+          <div className="sticky z-20" style={{ top: `var(${PLAYLIST_HEADER_H_VAR})` }}>
             {/* 25.2px line + 4px = 29.2px, so this bar ends at 68.8px — the
                 offset each row's sticky time stacks against. */}
             <div

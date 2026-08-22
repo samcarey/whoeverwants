@@ -67,6 +67,7 @@ import { apiAddActivityBlacklist } from "@/lib/api/users";
 import {
   SLOT_SHEET_OPEN_EVENT,
   notifySlotsChanged,
+  setAddPanelActive,
   type SlotSheetMode,
   type SlotSheetOpenDetail,
 } from "@/lib/slotEvents";
@@ -300,7 +301,18 @@ export default function NewSlotSheet() {
     });
   }, []);
 
-  useBodyScrollLock(isOpen);
+  // Adding an activity is a light top-of-page panel, NOT a sheet: it doesn't
+  // dim or lock the page, and it can't lock scroll — the tap that opens it
+  // starts a smooth scroll that a `position: fixed` body lock would freeze
+  // mid-animation.
+  const isAddActivity = isOpen && mode === "activity" && activityIndex === null;
+  useBodyScrollLock(isOpen && !isAddActivity);
+
+  // Tell the timeline to hide its column headers while the panel is up.
+  useEffect(() => {
+    setAddPanelActive(isAddActivity);
+    return () => setAddPanelActive(false);
+  }, [isAddActivity]);
 
   const close = useCallback(() => setIsOpen(false), []);
 
@@ -653,9 +665,6 @@ export default function NewSlotSheet() {
         : isNewActivity
           ? "Add Activity"
           : "Edit Activity";
-  // Adding an activity is a lightweight top-of-page panel, not the sheet:
-  // it's only "which activity?", so it doesn't need the full-height chrome.
-  const isAddActivity = showActivity && isNewActivity;
   const saveDisabled =
     saving ||
     deleting ||
@@ -704,7 +713,7 @@ export default function NewSlotSheet() {
           blacklist); the others (things other people are doing) can't
           be deleted. */}
       {(nameFocused || isAddActivity) && hasSuggestions && (
-        <div className="mt-3 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+        <div className="mt-3 max-h-64 overflow-y-auto overscroll-contain divide-y divide-gray-200 dark:divide-gray-700">
           {SUGGESTION_GROUPS.map((group) => {
             const items = filteredSuggestions[group.key];
             if (items.length === 0) return null;
@@ -791,7 +800,7 @@ export default function NewSlotSheet() {
             }
           >
             <div
-              className="pointer-events-auto mx-auto w-full sm:max-w-md rounded-3xl bg-gray-100 dark:bg-gray-900 p-2 shadow-2xl flex items-start gap-2"
+              className="pointer-events-auto mx-auto w-full sm:max-w-md rounded-3xl bg-gray-100 dark:bg-gray-900 p-2 shadow-2xl flex items-start gap-2 animate-fade-in"
               role="dialog"
               aria-modal="true"
               aria-label={title}

@@ -37,7 +37,7 @@ import {
   type ActivityColor,
   type SlotWindowLine,
 } from "@/lib/slotUtils";
-import { openSlotSheet, scrollAnchorToTop } from "@/lib/slotEvents";
+import { openSlotSheet, anchorRowForAddPanel, PLAYLIST_HEADER_H_VAR } from "@/lib/slotEvents";
 
 interface SlotCardProps {
   slot: Slot;
@@ -73,6 +73,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
     // the day divider's text above it, so the content reads as sitting inside
     // the card rather than hugging its rounded left edge.
     <div
+      data-slot-card=""
       // No `w-full`: width must stay auto so the negative margins actually
       // stretch the card past both page edges (`width: 100%` would pin it to
       // the padded container and only the left margin would take effect).
@@ -86,9 +87,10 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
           height of the left column. */}
       <div className="flex items-stretch">
         {/* The time is this row's header, so it sticks under the day divider
-            (76.8px = the column headers' 39.6px + the divider's 29.2px + the
-            card's own 8px top padding, which is exactly where the time sits
-            below the divider at rest — so nothing shifts when it locks)
+            (the column headers' height — a CSS var, zeroed while the add
+            panel hides them — plus the divider's 29.2px and the card's own
+            8px top padding, which is exactly where the time sits below the
+            divider at rest, so nothing shifts when it locks)
             while this row's activities scroll past it, and rides out as the
             row ends and the next row's time takes its place.
             self-start is load-bearing: a stretched box has no room to slide
@@ -98,7 +100,11 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             (z-10) and the day divider (z-20): a time being pushed out by the
             end of its row rides up UNDER the divider rather than over its
             date. */}
-        <div className="sticky top-[76.8px] z-[15] shrink-0 self-start">
+        <div
+          data-slot-time=""
+          className="sticky z-[15] shrink-0 self-start"
+          style={{ top: `calc(var(${PLAYLIST_HEADER_H_VAR}) + 37.2px)` }}
+        >
           {/* This window's time span on ONE line (nowrap — the column sizes to
               it, so the duration never wraps), left-justified against the
               card's inner left edge (a touch right of the day divider's text).
@@ -162,7 +168,9 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
               onClick={(e) => {
                 // Put the "+" at the top of the screen first, then hang the
                 // add panel off its settled position.
-                const anchorBottom = scrollAnchorToTop(e.currentTarget);
+                // Scroll this row's day + time to the top, then hang the add
+                // panel just under the time.
+                const anchorBottom = anchorRowForAddPanel(e.currentTarget);
                 openSlotSheet(slot, "activity", null, anchorBottom);
               }}
               aria-label="Add an activity"
