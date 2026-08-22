@@ -335,13 +335,14 @@ def _event_payload(
     window_src = common or viewer.windows
     window = max(window_src, key=lambda w: w[1] - w[0]) if window_src else None
 
-    # Display bits: the freshest tagging row across candidates wins (same
-    # convention as suggest_activities).
+    # Display bits: the VIEWER tagged this activity themselves, so show them
+    # their own casing + emoji; fall back to the freshest tagging row (the
+    # suggest_activities convention) for anything they left unset.
     freshest = max(cands.values(), key=lambda c: c.freshest)
     return {
         "day": day,
-        "activity": freshest.display,
-        "emoji": freshest.emoji,
+        "activity": viewer.display or freshest.display,
+        "emoji": viewer.emoji or freshest.emoji,
         "window": (
             {"min": _minutes_to_hhmm(window[0]), "max": _minutes_to_hhmm(window[1])}
             if window
