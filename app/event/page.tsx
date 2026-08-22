@@ -28,6 +28,7 @@ import { useSwipeBackGesture, useHeaderPortalRef } from "@/lib/useSwipeBackGestu
 import { SHOW_HOME_BACKDROP_EVENT, HIDE_HOME_BACKDROP_EVENT } from "@/lib/eventChannels";
 import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
+import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import { GroupGlyph } from "@/components/CandidatePicker";
 import { partyCountLabel } from "@/components/PartyCountField";
 import { haptic } from "@/lib/haptics";
@@ -85,6 +86,7 @@ function EventPageInner() {
   const key = activity.trim().toLowerCase();
   usePageReady(true);
 
+  const myImageUrl = useMyUserImageUrl();
   const [events, setEvents] = useState<SlotEvent[]>(() => getCachedSlotEvents() ?? []);
   const [slots, setSlots] = useState<Slot[] | null>(() => getCachedSlots());
   const [busy, setBusy] = useState(false);
@@ -263,7 +265,10 @@ function EventPageInner() {
                     <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                       {ev.viewer_confirmed && (
                         <li className="flex items-center gap-3 py-2.5">
-                          <InitialBubble name={null} sizeClassName="w-8 h-8" />
+                          {/* name=null → the anonymous disc unless a profile
+                              photo is set (the /info members-list convention
+                              for the viewer's own row). */}
+                          <InitialBubble name={null} imageUrl={myImageUrl} sizeClassName="w-8 h-8" />
                           <span className="text-gray-900 dark:text-gray-100">You</span>
                         </li>
                       )}
