@@ -148,6 +148,10 @@ export interface SlotEvent {
   day: string;
   activity: string;
   emoji: string | null;
+  /** "@ time" on the card's first line: the earliest start that lets every
+   *  member's minimum be met (HH:MM; the confirmed set's own start once the
+   *  event is met). */
+  time: string | null;
   /** The time the (confirmed + viewer) set still shares — anchors the card to
    *  a slot row. HH:MM bounds, cross-midnight convention (max <= min). */
   window: { min: string; max: string } | null;

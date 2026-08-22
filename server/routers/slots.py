@@ -225,6 +225,10 @@ class SlotEventResponse(BaseModel):
     day: str
     activity: str
     emoji: str | None = None
+    # "@ HH:MM" for the card's first line: the earliest start that lets every
+    # member's minimum be met (the confirmed set's own start once the event
+    # is on).
+    time: str | None = None
     # The time the (confirmed + viewer) set still shares — the card's anchor.
     window: dict | None = None
     confirmed_count: int = 0

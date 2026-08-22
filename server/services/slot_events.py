@@ -145,13 +145,14 @@ def _allows(c: _Candidate, other_uid: str, members: dict[str, set[str]]) -> bool
     return any(other_uid in members.get(gid, ()) for gid in c.include_groups)
 
 
-def _set_ok(
+def _constraints_ok(
     cands: list[_Candidate],
     members: dict[str, set[str]],
     *,
     require_min: bool,
 ) -> bool:
-    """Does this exact set satisfy every member's condition? `require_min`
+    """Does this exact set satisfy every member's size + include/exclude
+    conditions (the time windows are checked separately)? `require_min`
     distinguishes "the event is on" (mins must hold) from "may this person
     join a still-growing set" (mins are satisfied by growth, not violated)."""
     n = len(cands)
@@ -163,17 +164,33 @@ def _set_ok(
         for other in cands:
             if other.user_id != c.user_id and not _allows(c, other.user_id, members):
                 return False
-    return bool(_common_windows(cands))
+    return True
 
 
-def _viable_with(
+def _set_ok(
+    cands: list[_Candidate],
+    members: dict[str, set[str]],
+    *,
+    require_min: bool,
+) -> bool:
+    """Constraints AND a shared time window — the full "this set works" check."""
+    return _constraints_ok(cands, members, require_min=require_min) and bool(
+        _common_windows(cands)
+    )
+
+
+def _earliest_viable_start(
     viewer: _Candidate,
     others: list[_Candidate],
     members: dict[str, set[str]],
-) -> bool:
-    """Does ANY subset containing the viewer (size ≥ MIN_EVENT_PEOPLE) satisfy
-    everyone in it? Pre-filters to candidates mutually compatible with the
-    viewer (a member of a valid set must be), then brute-forces subsets."""
+) -> int | None:
+    """The earliest minute at which SOME subset containing the viewer (size ≥
+    MIN_EVENT_PEOPLE, everyone's condition holding — minimums included) could
+    gather; None when no such subset exists (→ the event isn't proposed).
+    Pre-filters to candidates mutually compatible with the viewer (a member of
+    a valid set must be), then brute-forces subsets, keeping the earliest
+    common-window start across every viable one — "the earliest time that
+    allows the minimum amount of people to attend"."""
     pool = [
         o
         for o in others
@@ -181,11 +198,20 @@ def _viable_with(
         and _allows(o, viewer.user_id, members)
         and _intersect(viewer.windows, o.windows)
     ][: MAX_SEARCH_CANDIDATES - 1]
+    earliest: int | None = None
     for mask in range(1, 1 << len(pool)):
         subset = [viewer] + [o for i, o in enumerate(pool) if mask >> i & 1]
-        if len(subset) >= MIN_EVENT_PEOPLE and _set_ok(subset, members, require_min=True):
-            return True
-    return False
+        if len(subset) < MIN_EVENT_PEOPLE:
+            continue
+        if not _constraints_ok(subset, members, require_min=True):
+            continue
+        commons = _common_windows(subset)
+        if not commons:
+            continue
+        start = min(w[0] for w in commons)
+        if earliest is None or start < earliest:
+            earliest = start
+    return earliest
 
 
 # ----------------------------------------------------------------------------
@@ -309,7 +335,8 @@ def _event_payload(
     if viewer is None:
         return None
     others = [c for u, c in cands.items() if u != viewer_id]
-    if not _viable_with(viewer, others, members):
+    earliest_viable = _earliest_viable_start(viewer, others, members)
+    if earliest_viable is None:
         return None
 
     # Stale confirmations (the slot behind them was edited/deleted) drop out
@@ -328,6 +355,16 @@ def _event_payload(
         confirmed, members, require_min=True
     )
 
+    # The "@ time" on the card: once the event is ON it's when the people
+    # actually going can all start; until then it's the earliest start any
+    # viable group containing the viewer could manage — the earliest time
+    # that lets everyone's minimum be met.
+    if met:
+        commons = _common_windows(confirmed)
+        time_min = min(w[0] for w in commons) if commons else None
+    else:
+        time_min = earliest_viable
+
     # The window shown on the card: what the (joined) set still shares —
     # longest common stretch; falls back to the viewer's own when the viewer
     # can't currently join (their card still anchors somewhere).
@@ -343,6 +380,7 @@ def _event_payload(
         "day": day,
         "activity": viewer.display or freshest.display,
         "emoji": viewer.emoji or freshest.emoji,
+        "time": _minutes_to_hhmm(time_min) if time_min is not None else None,
         "window": (
             {"min": _minutes_to_hhmm(window[0]), "max": _minutes_to_hhmm(window[1])}
             if window
@@ -469,6 +507,7 @@ def set_confirmation(conn, *, user_id: str, day: str, activity: str, confirmed: 
         "day": day,
         "activity": act,
         "emoji": None,
+        "time": None,
         "window": None,
         "confirmed_count": len(confirmed_ids),
         "confirmed_names": [],

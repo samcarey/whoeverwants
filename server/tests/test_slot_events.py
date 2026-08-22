@@ -8,7 +8,12 @@ from datetime import date, timedelta
 import psycopg
 
 from services.auth import generate_token, hash_token, normalize_email
-from services.slot_events import _Candidate, _intersect, _set_ok, _viable_with
+from services.slot_events import (
+    _Candidate,
+    _earliest_viable_start,
+    _intersect,
+    _set_ok,
+)
 from tests.conftest import TEST_DB_URL, bid_headers
 
 
@@ -147,8 +152,21 @@ def test_set_ok_needs_a_common_window():
 def test_viable_with_reaches_minimum_via_third_person():
     a = _cand("a", min_people=3)
     b, c = _cand("b"), _cand("c")
-    assert not _viable_with(a, [b], {})
-    assert _viable_with(a, [b, c], {})
+    assert _earliest_viable_start(a, [b], {}) is None
+    assert _earliest_viable_start(a, [b, c], {}) == 540
+
+
+def test_earliest_viable_start_is_the_min_headcount_time():
+    """A pair could start at 9:00; the trio only at noon. B's minimum of 2 is
+    met by the pair, so 9:00 is "the earliest time that allows the minimum
+    amount of people to attend" — the trio's later window doesn't drag it."""
+    a = _cand("a", windows=[(540, 1020)])
+    b = _cand("b", windows=[(540, 1020)], min_people=2)
+    c = _cand("c", windows=[(720, 1020)])
+    assert _earliest_viable_start(a, [b, c], {}) == 540
+    # Force the trio (b needs 3) → the common window shifts to noon.
+    b.min_people = 3
+    assert _earliest_viable_start(a, [b, c], {}) == 720
 
 
 # --- API ---------------------------------------------------------------------
@@ -176,8 +194,10 @@ def test_two_overlapping_slots_propose_an_event_and_meet_on_two_confirms(client)
     r = _confirm(client, browser_id=b, day=day, activity=act.lower())
     assert r.status_code == 200
     assert r.json()["met"] and r.json()["confirmed_count"] == 2
-    # The card's window narrows to what the confirmed pair shares.
+    # The card's window narrows to what the confirmed pair shares, and the
+    # "@ time" is when they can actually start.
     assert r.json()["window"] == {"min": "10:00", "max": "14:00"}
+    assert r.json()["time"] == "10:00"
     # And A sees the met state too.
     assert _events(client, browser_id=a)[0]["met"]
 
@@ -288,7 +308,11 @@ def test_minimum_people_gates_the_proposal_until_a_third_arrives(client):
     assert _events(client, browser_id=b) == []
 
     _create_slot(client, browser_id=c, day_time_windows=_dtw(day), activities=[act])
-    assert len(_events(client, browser_id=a)) == 1
+    evs = _events(client, browser_id=a)
+    assert len(evs) == 1
+    # Every viable group needs all three (A's min), so the time is when all
+    # three can start.
+    assert evs[0]["time"] == "09:00"
     # Met only once all three confirm.
     _confirm(client, browser_id=a, day=day, activity=act)
     r = _confirm(client, browser_id=b, day=day, activity=act)

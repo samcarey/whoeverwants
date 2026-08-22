@@ -28,6 +28,7 @@
  */
 
 import { memo, useMemo } from "react";
+import InitialBubble from "@/components/InitialBubble";
 import type { Slot, SlotEvent } from "@/lib/api/slots";
 import {
   activityColor,
@@ -51,33 +52,73 @@ interface SlotCardProps {
   onToggleConfirm: (ev: SlotEvent) => void;
 }
 
-/** One proposed event as a tiny card. Three button states:
- *    - viewer confirmed → filled green "Going ✓" (tap cancels),
- *    - joinable → blue "Confirm",
- *    - would break a confirmed member's who-with condition → dead "Full"
- *      (it comes back on its own if someone cancels — the tab polls).
- *  A met event (the confirmed set satisfies everyone in it) bolds the card
- *  and tints it green so "this is happening" reads at a glance. */
+/** "HH:MM" → a compact 12h clock ("2 PM", "2:30 PM"). */
+function fmtClock(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return m === 0 ? `${h12} ${period}` : `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+// Confirmed-people discs shown on an event card before collapsing to "+X".
+const MAX_EVENT_ICONS = 4;
+
+/** One proposed event: a tiny two-line card with the action button as a
+ *  full-height column spanning both lines.
+ *    line 1 — {emoji} {activity} @ {time}, where time is the earliest start
+ *             that lets every member's minimum be met (server-computed; the
+ *             confirmed set's own start once the event is on);
+ *    line 2 — one initials disc per confirmed person, "+X" past the cap
+ *             (muted "No one yet" before anyone confirms).
+ *  Button states: blue "Confirm" → neutral "Cancel" (you're in — your disc is
+ *  on line 2) → dead "Full" (joining would break a confirmed member's
+ *  who-with condition; it frees on its own if someone cancels — the tab
+ *  polls). A met event bolds the card and tints it green. */
 function EventCard({ ev, onToggleConfirm }: { ev: SlotEvent; onToggleConfirm: (ev: SlotEvent) => void }) {
   const full = !ev.viewer_confirmed && !ev.can_confirm;
+  const shown = ev.confirmed_names.slice(0, MAX_EVENT_ICONS);
+  const extra = ev.confirmed_count - shown.length;
   return (
     <div
       title={ev.confirmed_names.length > 0 ? `Going: ${ev.confirmed_names.join(", ")}` : undefined}
-      className={`flex items-center gap-1.5 rounded-xl border py-1 pl-2 pr-1 text-[12.5px] leading-tight transition-colors ${
+      className={`flex items-stretch overflow-hidden rounded-xl border text-[12.5px] leading-tight transition-colors ${
         ev.met
           ? "border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-semibold"
           : "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
       }`}
     >
-      <span className="whitespace-nowrap">
-        {ev.emoji ? `${ev.emoji} ` : ""}
-        {ev.activity}
-      </span>
-      {ev.confirmed_count > 0 && (
-        <span className={`whitespace-nowrap tabular-nums ${ev.met ? "text-green-600 dark:text-green-300" : "text-gray-400 dark:text-gray-500"}`}>
-          {ev.confirmed_count} in
+      <div className="min-w-0 flex flex-col justify-center gap-1 py-1.5 pl-2 pr-2">
+        <span className="truncate">
+          {ev.emoji ? `${ev.emoji} ` : ""}
+          {ev.activity}
+          {ev.time && (
+            <span className={ev.met ? "text-green-600 dark:text-green-300" : "text-gray-400 dark:text-gray-500"}>
+              {" "}@ {fmtClock(ev.time)}
+            </span>
+          )}
         </span>
-      )}
+        <div className="flex items-center gap-1 min-h-[18px]">
+          {shown.length === 0 ? (
+            <span className="text-[11px] text-gray-400 dark:text-gray-500 font-normal">No one yet</span>
+          ) : (
+            shown.map((n, i) => (
+              <InitialBubble
+                key={`${n}#${i}`}
+                name={n}
+                sizeClassName="w-[18px] h-[18px]"
+                textSizeClassName="text-[8px]"
+              />
+            ))
+          )}
+          {extra > 0 && (
+            <span className={`text-[11px] tabular-nums ${ev.met ? "text-green-600 dark:text-green-300" : "text-gray-400 dark:text-gray-500"}`}>
+              +{extra}
+            </span>
+          )}
+        </div>
+      </div>
+      {/* The action column spans BOTH rows — self-stretch against the card's
+          items-stretch, separated by a hairline in the card's border color. */}
       <button
         type="button"
         disabled={full}
@@ -85,15 +126,17 @@ function EventCard({ ev, onToggleConfirm }: { ev: SlotEvent; onToggleConfirm: (e
         aria-label={
           ev.viewer_confirmed ? `Cancel ${ev.activity}` : full ? `${ev.activity} is full` : `Confirm ${ev.activity}`
         }
-        className={`shrink-0 rounded-lg px-1.5 py-0.5 text-[11.5px] font-medium transition ${
+        className={`self-stretch shrink-0 flex items-center px-2.5 text-[11.5px] font-medium border-l transition ${
+          ev.met ? "border-green-500 dark:border-green-500" : "border-gray-300 dark:border-gray-700"
+        } ${
           ev.viewer_confirmed
-            ? "bg-green-600 text-white active:scale-95"
+            ? "bg-gray-50 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
             : full
               ? "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default"
-              : "bg-blue-600 text-white active:scale-95"
+              : "bg-blue-600 text-white active:bg-blue-700"
         }`}
       >
-        {ev.viewer_confirmed ? "Going ✓" : full ? "Full" : "Confirm"}
+        {ev.viewer_confirmed ? "Cancel" : full ? "Full" : "Confirm"}
       </button>
     </div>
   );
@@ -181,14 +224,13 @@ function SlotCardImpl({ slot, line, colors, events, onToggleConfirm }: SlotCardP
             {line.endTime}
             <span className="ml-1 text-gray-400 dark:text-gray-500">· {line.duration}</span>
           </button>
-          {/* Events hang under their time as children of it, so they're
-              indented a step past the time text — pl-3 is the nesting step and
-              applies to the placeholder and to real events alike. Each is a
-              tiny card: the activity + who's in + a Confirm toggle. A MET
-              event (everyone confirmed's condition holds) goes bold + green;
-              a viewer whose joining would break a confirmed member's
-              condition sees a dead "Full" button instead. */}
-          <div className="mt-2 pl-3 flex flex-col items-start gap-1.5">
+          {/* Events hang under their time, flush with its left edge (no
+              nesting indent — they're this window's main content, not a
+              sub-item of the chip). Each is a tiny two-line card — title
+              @ time over the confirmed people's discs — with the
+              Confirm/Cancel/Full button spanning both lines. A MET event
+              (everyone confirmed's condition holds) goes bold + green. */}
+          <div className="mt-2 flex flex-col items-start gap-1.5">
             {events.length === 0 ? (
               <span className="text-sm text-gray-400 dark:text-gray-500">No events yet…</span>
             ) : (
