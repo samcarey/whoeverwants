@@ -16,7 +16,8 @@
  *     you tap the activity afterward to say who it's with. EDITING (with an
  *     index) is the full sheet: that same field plus the who-with card and a
  *     red "Delete activity". Picking a suggestion fills the name + emoji and
- *     collapses the list. In BOTH, focusing the name field drops down its
+ *     collapses the list. The add panel has NO ✓ — closing the keyboard (the
+ *     iOS Done) commits it. In BOTH, focusing the name field drops down its
  *     suggestions (others planning this period / your past picks / others'
  *     past picks), grouped + narrowed by what's typed. Activities already on
  *     the slot are hidden from it (except the one being edited); only the
@@ -335,6 +336,10 @@ export default function NewSlotSheet() {
     };
   }, [isAddActivity, anchorBottom]);
 
+  // Set just before an explicit cancel so the blur it causes doesn't read as
+  // the keyboard's Done (see the name field's onBlur).
+  const cancelledRef = useRef(false);
+
   const close = useCallback(() => {
     cancelPrimedFocus();
     setIsOpen(false);
@@ -650,6 +655,7 @@ export default function NewSlotSheet() {
       if (e.key !== "Escape") return;
       // A stacked modal (emoji picker or delete confirm) consumes Escape.
       if (emojiOpen || pendingBlacklist !== null) return;
+      cancelledRef.current = true;
       close();
     };
     document.addEventListener("keydown", handleEsc);
@@ -700,6 +706,7 @@ export default function NewSlotSheet() {
       <div className="flex items-center gap-3">
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => setEmojiOpen(true)}
           aria-label="Choose an emoji"
           className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-xl leading-none active:scale-95"
@@ -724,6 +731,17 @@ export default function NewSlotSheet() {
           onBlur={(e) => {
             setName(e.target.value.trim());
             setSuggestOpen(false);
+            // The add panel has no ✓: closing the keyboard IS the accept.
+            // Skipped while a stacked modal has taken focus (the emoji picker
+            // steals it, which would otherwise read as a Done) and when the
+            // close was an explicit cancel.
+            if (!isAddActivity || emojiOpen || pendingBlacklist !== null) return;
+            if (cancelledRef.current) {
+              cancelledRef.current = false;
+              return;
+            }
+            if (e.target.value.trim()) handleSave();
+            else close();
           }}
           // Re-tapping an already-focused field fires no focus event, so this
           // is the only way back to the list after a pick collapsed it.
@@ -814,30 +832,12 @@ export default function NewSlotSheet() {
             }
           >
             <div
-              className="pointer-events-auto mx-auto w-full sm:max-w-md rounded-3xl bg-gray-100 dark:bg-gray-900 p-2 shadow-2xl flex items-start gap-2 animate-fade-in"
+              className="pointer-events-auto mx-auto w-full sm:max-w-md rounded-3xl bg-gray-100 dark:bg-gray-900 p-2 shadow-2xl animate-fade-in"
               role="dialog"
               aria-modal="true"
               aria-label={title}
             >
               <div className="min-w-0 flex-1">{activityField}</div>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saveDisabled}
-                aria-label="Confirm slot"
-                className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {saving ? (
-                  <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
             </div>
           </div>
         </>
