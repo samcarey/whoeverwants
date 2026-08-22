@@ -159,7 +159,11 @@ export interface SlotEvent {
   /** The time the (confirmed + viewer) set still shares — anchors the card to
    *  a slot row. HH:MM bounds, cross-midnight convention (max <= min). */
   window: { min: string; max: string } | null;
+  /** Total confirmed INCLUDING the viewer... */
   confirmed_count: number;
+  /** ...but the names EXCLUDE them — the viewer's own membership renders as
+   *  "you" (the "You're going!" pill, the event page's "You" row), never as
+   *  their own disc. */
   confirmed_names: string[];
   viewer_confirmed: boolean;
   /** False + not confirmed = the button reads "Full" (joining would break an

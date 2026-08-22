@@ -171,6 +171,9 @@ function TemplateInner({ children }: AppTemplateProps) {
   // /explore renders its own title ("Explore") + floating back button via
   // HeaderPortal, so it must opt out of the fallback header.
   const isExplorePage = pathname === '/explore' || pathname === '/explore/';
+  // /event (a playlist event's own page) renders its own centered title +
+  // floating back button, so it opts out too.
+  const isEventPage = pathname === '/event' || pathname === '/event/';
   // /groups (the group list, reached from home's upper-right button) renders
   // its own title bar + floating back button via HeaderPortal, so it opts out
   // of the fallback header too.
@@ -186,7 +189,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   return (
     <>
       {/* Fallback header for pages without a page-specific header (not group, settings, home, invite redemption, explore, or create-modal). */}
-      {!isGroupFamilyPage && !isSettingsPage && !isSettingsEditPage && !isInvitePage && !isExplorePage && !isGroupsPage && pathname !== '/' && (
+      {!isGroupFamilyPage && !isSettingsPage && !isSettingsEditPage && !isInvitePage && !isExplorePage && !isEventPage && !isGroupsPage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">

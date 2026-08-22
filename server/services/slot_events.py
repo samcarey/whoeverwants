@@ -413,9 +413,12 @@ def _party_payload(
             if window
             else None
         ),
+        # Count includes the viewer; the NAMES exclude them — every surface
+        # shows the viewer's own membership as "you" (the card's "You're
+        # going!" pill, the event page's "You" row), never as their own disc.
         "confirmed_count": len(confirmed),
         "confirmed_names": sorted(
-            (c.name or "Someone") for c in confirmed
+            (c.name or "Someone") for c in confirmed if c.user_id != viewer_id
         ),
         "viewer_confirmed": viewer_confirmed,
         "can_confirm": can_confirm,

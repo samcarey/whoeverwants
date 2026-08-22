@@ -49,7 +49,9 @@ interface SlotCardProps {
   /** The system-proposed events anchored to THIS window (see PlaylistTab's
    *  eventsByEntryKey). Reference-stable when unchanged, for the memo. */
   events: SlotEvent[];
-  onToggleConfirm: (ev: SlotEvent) => void;
+  onConfirm: (ev: SlotEvent) => void;
+  /** Open the event's own page. */
+  onOpenEvent: (ev: SlotEvent) => void;
 }
 
 /** "HH:MM" → a compact 12h clock ("2 PM", "2:30 PM"). */
@@ -63,43 +65,70 @@ function fmtClock(hhmm: string): string {
 // Confirmed-people discs shown on an event card before collapsing to "+X".
 const MAX_EVENT_ICONS = 4;
 
-/** One proposed event: a tiny two-line card with the action button as a
- *  full-height column spanning both lines.
- *    line 1 — {emoji} {activity} @ {time}, where time is the earliest start
- *             that lets every member's minimum be met (server-computed; the
- *             confirmed set's own start once the event is on);
- *    line 2 — one initials disc per confirmed person, "+X" past the cap
- *             (muted "No one yet" before anyone confirms).
- *  Button states: blue "Confirm" → neutral "Cancel" (you're in — your disc is
- *  on line 2) → dead "Full" (joining would break a confirmed member's
- *  who-with condition; it frees on its own if someone cancels — the tab
- *  polls). A met event bolds the card and tints it green. */
-function EventCard({ ev, onToggleConfirm }: { ev: SlotEvent; onToggleConfirm: (ev: SlotEvent) => void }) {
+/** One proposed event: a tiny two-line card. Tapping the CARD opens the
+ *  event's own page (people list, your conditions, Back Out); the right-side
+ *  pill is the only in-card action, and only when there's something to do:
+ *    - joinable            → blue "Confirm" pill (button),
+ *    - confirmed + met     → GREEN card, "You're going!" pill (indicator),
+ *    - confirmed + pending → BLUE card, "Pending" pill (indicator),
+ *    - locked out ("Full") → GREY card, "Full" pill (indicator) — grey, not
+ *      green, even when the party is met: a happening event you're not part
+ *      of isn't good news for YOU.
+ *  Cancelling moved to the event page's "Back Out" — no cancel here.
+ *  Line 1 is {emoji} {activity} @ {earliest-viable time}; line 2 is one disc
+ *  per OTHER confirmed person (the server already excludes the viewer from
+ *  confirmed_names), "+X" past the cap. */
+function EventCard({
+  ev,
+  onConfirm,
+  onOpen,
+}: {
+  ev: SlotEvent;
+  onConfirm: (ev: SlotEvent) => void;
+  onOpen: (ev: SlotEvent) => void;
+}) {
+  const going = ev.viewer_confirmed && ev.met;
+  const pending = ev.viewer_confirmed && !ev.met;
   const full = !ev.viewer_confirmed && !ev.can_confirm;
   const shown = ev.confirmed_names.slice(0, MAX_EVENT_ICONS);
-  const extra = ev.confirmed_count - shown.length;
+  const extra = ev.confirmed_count - (ev.viewer_confirmed ? 1 : 0) - shown.length;
+  const cardCls = going
+    ? "border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-semibold"
+    : pending
+      ? "border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200"
+      : full
+        ? "border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/60 text-gray-400 dark:text-gray-500"
+        : "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300";
+  const timeCls = going
+    ? "text-green-600 dark:text-green-300"
+    : pending
+      ? "text-blue-500 dark:text-blue-300"
+      : "text-gray-400 dark:text-gray-500";
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(ev)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(ev);
+        }
+      }}
       title={ev.confirmed_names.length > 0 ? `Going: ${ev.confirmed_names.join(", ")}` : undefined}
-      className={`flex items-stretch overflow-hidden rounded-xl border text-[12.5px] leading-tight transition-colors ${
-        ev.met
-          ? "border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-semibold"
-          : "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-      }`}
+      className={`flex cursor-pointer items-center gap-2 rounded-2xl border py-1.5 pl-2.5 pr-1.5 text-[12.5px] leading-tight transition-colors active:opacity-80 ${cardCls}`}
     >
-      <div className="min-w-0 flex flex-col justify-center gap-1 py-1.5 pl-2 pr-2">
+      <div className="min-w-0 flex flex-col gap-1">
         <span className="truncate">
           {ev.emoji ? `${ev.emoji} ` : ""}
           {ev.activity}
-          {ev.time && (
-            <span className={ev.met ? "text-green-600 dark:text-green-300" : "text-gray-400 dark:text-gray-500"}>
-              {" "}@ {fmtClock(ev.time)}
-            </span>
-          )}
+          {ev.time && <span className={timeCls}> @ {fmtClock(ev.time)}</span>}
         </span>
         <div className="flex items-center gap-1 min-h-[18px]">
           {shown.length === 0 ? (
-            <span className="text-[11px] text-gray-400 dark:text-gray-500 font-normal">No one yet</span>
+            <span className="text-[11px] font-normal text-gray-400 dark:text-gray-500">
+              {ev.viewer_confirmed ? "Just you so far" : "No one yet"}
+            </span>
           ) : (
             shown.map((n, i) => (
               <InitialBubble
@@ -111,33 +140,39 @@ function EventCard({ ev, onToggleConfirm }: { ev: SlotEvent; onToggleConfirm: (e
             ))
           )}
           {extra > 0 && (
-            <span className={`text-[11px] tabular-nums ${ev.met ? "text-green-600 dark:text-green-300" : "text-gray-400 dark:text-gray-500"}`}>
-              +{extra}
-            </span>
+            <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">+{extra}</span>
           )}
         </div>
       </div>
-      {/* The action column spans BOTH rows — self-stretch against the card's
-          items-stretch, separated by a hairline in the card's border color. */}
-      <button
-        type="button"
-        disabled={full}
-        onClick={() => onToggleConfirm(ev)}
-        aria-label={
-          ev.viewer_confirmed ? `Cancel ${ev.activity}` : full ? `${ev.activity} is full` : `Confirm ${ev.activity}`
-        }
-        className={`self-stretch shrink-0 flex items-center px-2.5 text-[11.5px] font-medium border-l transition ${
-          ev.met ? "border-green-500 dark:border-green-500" : "border-gray-300 dark:border-gray-700"
-        } ${
-          ev.viewer_confirmed
-            ? "bg-gray-50 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
-            : full
-              ? "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default"
-              : "bg-blue-600 text-white active:bg-blue-700"
-        }`}
-      >
-        {ev.viewer_confirmed ? "Cancel" : full ? "Full" : "Confirm"}
-      </button>
+      {/* The right-side PILL, vertically centered inside the card. Only the
+          Confirm state is a live button (it must not also open the page —
+          stopPropagation); the rest are status indicators, and the card tap
+          handles navigation. */}
+      {going ? (
+        <span className="shrink-0 self-center whitespace-nowrap rounded-full bg-green-600 px-2.5 py-1 text-[11.5px] font-medium text-white">
+          You&apos;re going!
+        </span>
+      ) : pending ? (
+        <span className="shrink-0 self-center whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-1 text-[11.5px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+          Pending
+        </span>
+      ) : full ? (
+        <span className="shrink-0 self-center whitespace-nowrap rounded-full bg-gray-200 px-2.5 py-1 text-[11.5px] font-medium text-gray-400 dark:bg-gray-700 dark:text-gray-500">
+          Full
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onConfirm(ev);
+          }}
+          aria-label={`Confirm ${ev.activity}`}
+          className="shrink-0 self-center whitespace-nowrap rounded-full bg-blue-600 px-2.5 py-1 text-[11.5px] font-medium text-white transition active:bg-blue-700"
+        >
+          Confirm
+        </button>
+      )}
     </div>
   );
 }
@@ -148,7 +183,7 @@ function activitySymbol(name: string, emoji: string | null): string {
   return emoji || name.trim().charAt(0).toUpperCase() || "?";
 }
 
-function SlotCardImpl({ slot, line, colors, events, onToggleConfirm }: SlotCardProps) {
+function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: SlotCardProps) {
   // Resolve each activity's color once (stable per activity name across the
   // whole timeline — see buildActivityColorMap).
   const activities = slot.activities.map((a) => ({
@@ -228,13 +263,15 @@ function SlotCardImpl({ slot, line, colors, events, onToggleConfirm }: SlotCardP
               nesting indent — they're this window's main content, not a
               sub-item of the chip). Each is a tiny two-line card — title
               @ time over the confirmed people's discs — with the
-              Confirm/Cancel/Full button spanning both lines. A MET event
-              (everyone confirmed's condition holds) goes bold + green. */}
+              right-side pill (Confirm / You're going! / Pending / Full);
+              tapping the card opens the event's own page, where Back Out
+              lives. A met event YOU are in goes bold + green; a met event
+              you're locked out of is grey. */}
           <div className="mt-2 flex flex-col items-start gap-1.5">
             {events.length === 0 ? (
               <span className="text-sm text-gray-400 dark:text-gray-500">No events yet…</span>
             ) : (
-              events.map((ev) => <EventCard key={`${ev.day}#${ev.activity.toLowerCase()}#${ev.id ?? "fresh"}`} ev={ev} onToggleConfirm={onToggleConfirm} />)
+              events.map((ev) => <EventCard key={`${ev.day}#${ev.activity.toLowerCase()}#${ev.id ?? "fresh"}`} ev={ev} onConfirm={onConfirm} onOpen={onOpenEvent} />)
             )}
           </div>
         </div>

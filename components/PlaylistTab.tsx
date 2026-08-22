@@ -13,6 +13,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { navigateWithTransition } from "@/lib/viewTransitions";
+import { HOME_SCROLL_KEY, rememberCurrentScroll } from "@/lib/scrollMemory";
 import {
   apiListSlots,
   getCachedSlots,
@@ -125,22 +128,36 @@ export default function PlaylistTab() {
     };
   }, [loadEvents]);
 
-  // Confirm / cancel. The server is the real gate — and one toggle can move
-  // SEVERAL cards (a fresh card mints a party, switching parties changes two,
-  // a cancel can dissolve one), so just re-pull the whole list either way and
-  // let the refreshed flags drive every button. A 409 "Full" race lands the
-  // same way: the refetch shows the Full state.
-  const toggleConfirm = useCallback(
+  // Confirm (the card's only in-place action — cancelling lives on the event
+  // page as "Back Out"). The server is the real gate, and one confirm can
+  // move SEVERAL cards (a fresh card mints a party, switching parties changes
+  // two), so just re-pull the whole list either way and let the refreshed
+  // flags drive every pill. A 409 "Full" race lands the same way: the refetch
+  // shows the Full state.
+  const confirmEvent = useCallback(
     async (ev: SlotEvent) => {
       haptic.medium();
       try {
-        await apiSetEventConfirmation(ev.day, ev.activity, !ev.viewer_confirmed, ev.id);
+        await apiSetEventConfirmation(ev.day, ev.activity, true, ev.id);
       } catch {
         // Fall through to the refetch.
       }
       await loadEvents();
     },
     [loadEvents],
+  );
+
+  // Tapping a card opens the event's own page (people list, your conditions,
+  // Back Out). Scroll is saved first so back-nav lands where you left.
+  const router = useRouter();
+  const openEvent = useCallback(
+    (ev: SlotEvent) => {
+      rememberCurrentScroll(HOME_SCROLL_KEY);
+      const params = new URLSearchParams({ day: ev.day, activity: ev.activity });
+      if (ev.id) params.set("id", ev.id);
+      navigateWithTransition(router, `/event?${params.toString()}`, "forward");
+    },
+    [router],
   );
 
   // One row PER availability window across all slots, soonest first; a stable
@@ -319,7 +336,8 @@ export default function PlaylistTab() {
                 line={e.line}
                 colors={colors}
                 events={eventsByEntryKey.get(e.key) ?? NO_EVENTS}
-                onToggleConfirm={toggleConfirm}
+                onConfirm={confirmEvent}
+                onOpenEvent={openEvent}
               />
             ))}
           </div>

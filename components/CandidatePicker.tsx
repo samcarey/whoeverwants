@@ -34,7 +34,7 @@ export const candidateKey = (c: Candidate) =>
 
 /** Same "people" glyph as GroupsIcon, at pill/row size in currentColor —
  *  the only thing distinguishing a group from a person here. */
-function GroupGlyph({ className = "w-4 h-4 shrink-0" }: { className?: string }) {
+export function GroupGlyph({ className = "w-4 h-4 shrink-0" }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
       <path
