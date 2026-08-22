@@ -125,26 +125,20 @@ export default function PlaylistTab() {
     };
   }, [loadEvents]);
 
-  // Confirm / cancel. The server is the real gate — on ANY failure (incl. the
-  // 409 "Full" race where someone else confirmed first) just re-pull the
-  // events and let the refreshed flags drive the button.
+  // Confirm / cancel. The server is the real gate — and one toggle can move
+  // SEVERAL cards (a fresh card mints a party, switching parties changes two,
+  // a cancel can dissolve one), so just re-pull the whole list either way and
+  // let the refreshed flags drive every button. A 409 "Full" race lands the
+  // same way: the refetch shows the Full state.
   const toggleConfirm = useCallback(
     async (ev: SlotEvent) => {
       haptic.medium();
       try {
-        const updated = await apiSetEventConfirmation(ev.day, ev.activity, !ev.viewer_confirmed);
-        setEvents((prev) => {
-          const next = prev.map((e) =>
-            e.day === updated.day && e.activity.toLowerCase() === updated.activity.toLowerCase()
-              ? updated
-              : e,
-          );
-          eventsSigRef.current = JSON.stringify(next);
-          return next;
-        });
+        await apiSetEventConfirmation(ev.day, ev.activity, !ev.viewer_confirmed, ev.id);
       } catch {
-        void loadEvents();
+        // Fall through to the refetch.
       }
+      await loadEvents();
     },
     [loadEvents],
   );

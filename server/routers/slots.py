@@ -218,10 +218,13 @@ def who_with_candidates_endpoint(request: Request):
 
 
 class SlotEventResponse(BaseModel):
-    """One system-proposed event as THIS viewer sees it. Derived on every read
-    from the current slots + confirmations — see services/slot_events.py for
-    the semantics of met / can_confirm ("Full" when false and not confirmed)."""
+    """One system-proposed PARTY as THIS viewer sees it — several may coexist
+    per (day, activity). Derived on every read from the current slots +
+    confirmations — see services/slot_events.py for met / can_confirm ("Full"
+    when false and not confirmed) and the fresh-card rule."""
 
+    # The party's anchor row; null for the FRESH (not yet minted) party card.
+    id: str | None = None
     day: str
     activity: str
     emoji: str | None = None
@@ -246,6 +249,9 @@ class EventConfirmationRequest(BaseModel):
     day: str
     activity: str
     confirmed: bool
+    # Which party to join; omitted/null = the fresh card (join the fullest
+    # party that will take the caller, else mint a new one).
+    event_id: str | None = None
 
 
 @router.get("/events", response_model=SlotEventsResponse)
@@ -268,9 +274,16 @@ def set_event_confirmation_endpoint(req: EventConfirmationRequest, request: Requ
         user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=_browser_id(request))
         if not user_id:
             raise HTTPException(status_code=404, detail="Event not found")
+        if req.event_id is not None:
+            require_uuid(req.event_id, "event id")
         try:
             payload = set_confirmation(
-                conn, user_id=user_id, day=req.day, activity=req.activity, confirmed=req.confirmed
+                conn,
+                user_id=user_id,
+                day=req.day,
+                activity=req.activity,
+                confirmed=req.confirmed,
+                event_id=req.event_id,
             )
         except NoSuchEventError:
             raise HTTPException(status_code=404, detail="Event not found")

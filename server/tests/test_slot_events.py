@@ -48,10 +48,10 @@ def _events(client, *, browser_id):
     return r.json()["events"]
 
 
-def _confirm(client, *, browser_id, day, activity, confirmed=True):
+def _confirm(client, *, browser_id, day, activity, confirmed=True, event_id=None):
     return client.post(
         "/api/slots/events/confirmation",
-        json={"day": day, "activity": activity, "confirmed": confirmed},
+        json={"day": day, "activity": activity, "confirmed": confirmed, "event_id": event_id},
         headers=bid_headers(browser_id),
     )
 
@@ -266,13 +266,23 @@ def test_confirmed_members_exclusion_gates_a_late_joiner(client):
     # C still sees the event — a C+B pair would work — and can confirm now.
     assert _events(client, browser_id=c)[0]["can_confirm"]
 
-    # A confirms → C joining would put C at A's table → Full for C.
-    assert _confirm(client, browser_id=a, day=day, activity=act).status_code == 200
-    ev = _events(client, browser_id=c)[0]
-    assert not ev["can_confirm"]
-    assert _confirm(client, browser_id=c, day=day, activity=act).status_code == 409
-    # B is fine with everyone.
-    assert _events(client, browser_id=b)[0]["can_confirm"]
+    # A confirms → C joining A's party would put C at A's table → that party
+    # is Full for C, but the SAME rule that proposed the original event
+    # re-fires for the leftovers: a fresh card appears (a B+C pair works).
+    r = _confirm(client, browser_id=a, day=day, activity=act)
+    assert r.status_code == 200
+    p1 = r.json()["id"]
+    cards = _events(client, browser_id=c)
+    assert [(ev["id"] == p1, ev["can_confirm"]) for ev in cards] == [(True, False), (False, True)]
+    assert cards[1]["id"] is None and cards[1]["confirmed_count"] == 0
+
+    # C confirming lands in a NEW party, not A's.
+    r = _confirm(client, browser_id=c, day=day, activity=act)
+    assert r.status_code == 200
+    assert r.json()["id"] not in (None, p1) and r.json()["viewer_confirmed"]
+    # B can join either party (fine with everyone) — no fresh card for B.
+    b_cards = _events(client, browser_id=b)
+    assert len(b_cards) == 2 and all(ev["can_confirm"] and ev["id"] for ev in b_cards)
 
 
 def test_pairwise_impossible_event_is_not_proposed(client):
@@ -337,11 +347,83 @@ def test_include_set_restricts_to_group_members(client):
     _create_slot(client, browser_id=b, day_time_windows=_dtw(day), activities=[act])
     _create_slot(client, browser_id=c, day_time_windows=_dtw(day), activities=[act])
 
-    assert _confirm(client, browser_id=a, day=day, activity=act).status_code == 200
-    # B is inside A's include set → fine; C is not → Full.
+    r = _confirm(client, browser_id=a, day=day, activity=act)
+    assert r.status_code == 200
+    p1 = r.json()["id"]
+    # B is inside A's include set → fine; C is not → A's party is Full for C,
+    # and C's confirm spawns a second gathering instead of failing.
     assert _events(client, browser_id=b)[0]["can_confirm"]
-    assert not _events(client, browser_id=c)[0]["can_confirm"]
-    assert _confirm(client, browser_id=c, day=day, activity=act).status_code == 409
+    c_p1 = next(ev for ev in _events(client, browser_id=c) if ev["id"] == p1)
+    assert not c_p1["can_confirm"]
+    r = _confirm(client, browser_id=c, day=day, activity=act)
+    assert r.status_code == 200 and r.json()["id"] not in (None, p1)
+
+
+def test_full_party_spawns_a_second_identical_event(client):
+    """The headline behavior: when a party fills up, an identical fresh event
+    appears for whoever got left out — the proposal rule's base case
+    re-firing, not a special case — and it dissolves again when everyone
+    cancels."""
+    a, b, c, d = (str(uuid.uuid4()) for _ in range(4))
+    day = _day(1)
+    act = _act("Climbing")
+    _create_slot(
+        client, browser_id=a, day_time_windows=_dtw(day),
+        activities=[{"name": act, "who_with": [{"max_people": 2}]}],
+    )
+    for bid in (b, c, d):
+        _create_slot(client, browser_id=bid, day_time_windows=_dtw(day), activities=[act])
+
+    p1 = _confirm(client, browser_id=a, day=day, activity=act).json()["id"]
+    assert _confirm(client, browser_id=b, day=day, activity=act).json()["met"]
+
+    # C is locked out of the pair — and sees a fresh identical event.
+    cards = _events(client, browser_id=c)
+    assert [(ev["id"] == p1, ev["can_confirm"]) for ev in cards] == [(True, False), (False, True)]
+    p2 = _confirm(client, browser_id=c, day=day, activity=act).json()["id"]
+    assert p2 not in (None, p1)
+
+    # D now has a JOINABLE second party, so no third card spawns for D.
+    d_cards = _events(client, browser_id=d)
+    assert [ev["id"] for ev in d_cards] == [p2, p1]
+    assert d_cards[0]["can_confirm"] and not d_cards[1]["can_confirm"]
+    assert _confirm(client, browser_id=d, day=day, activity=act, event_id=p2).json()["met"]
+
+    # A sees both parties; the second is Full for A (their own max of 2).
+    a_cards = _events(client, browser_id=a)
+    assert [ev["id"] for ev in a_cards] == [p1, p2]
+    assert not a_cards[1]["can_confirm"]
+
+    # Everyone leaves party 2 → it dissolves back into the fresh card.
+    _confirm(client, browser_id=c, day=day, activity=act, confirmed=False)
+    _confirm(client, browser_id=d, day=day, activity=act, confirmed=False)
+    d_cards = _events(client, browser_id=d)
+    assert [(ev["id"] == p1, ev["id"] is None) for ev in d_cards] == [(True, False), (False, True)]
+
+
+def test_confirming_another_party_moves_the_confirmation(client):
+    """One confirmation per (day, activity): joining a different party leaves
+    the old one."""
+    a, b, c, d = (str(uuid.uuid4()) for _ in range(4))
+    day = _day(1)
+    act = _act("Poker")
+    _create_slot(
+        client, browser_id=a, day_time_windows=_dtw(day),
+        activities=[{"name": act, "who_with": [{"max_people": 2}]}],
+    )
+    for bid in (b, c, d):
+        _create_slot(client, browser_id=bid, day_time_windows=_dtw(day), activities=[act])
+    p1 = _confirm(client, browser_id=a, day=day, activity=act).json()["id"]
+    _confirm(client, browser_id=b, day=day, activity=act)
+    p2 = _confirm(client, browser_id=c, day=day, activity=act).json()["id"]
+    _confirm(client, browser_id=d, day=day, activity=act, event_id=p2)
+
+    # B defects from A's pair to the other party.
+    r = _confirm(client, browser_id=b, day=day, activity=act, event_id=p2)
+    assert r.status_code == 200 and r.json()["id"] == p2 and r.json()["confirmed_count"] == 3
+    by_id = {ev["id"]: ev for ev in _events(client, browser_id=b)}
+    assert by_id[p1]["confirmed_count"] == 1  # A alone now
+    assert by_id[p2]["viewer_confirmed"]
 
 
 def test_confirm_without_a_matching_slot_404s(client):

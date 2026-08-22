@@ -145,6 +145,10 @@ export async function apiGetWhoWithCandidates(): Promise<WhoWithCandidate[]> {
  *  services/slot_events.py) — none of this is stored, so it can flip under
  *  the viewer as others confirm/cancel, which is why the Playlist tab polls. */
 export interface SlotEvent {
+  /** The party's anchor row; null for the FRESH (not yet minted) party card —
+   *  several parties of the same (day, activity) can coexist, and when one is
+   *  full the fresh card reappears for whoever got left out. */
+  id: string | null;
   day: string;
   activity: string;
   emoji: string | null;
@@ -188,10 +192,11 @@ export async function apiSetEventConfirmation(
   day: string,
   activity: string,
   confirmed: boolean,
+  eventId: string | null,
 ): Promise<SlotEvent> {
   return slotFetch<SlotEvent>("/events/confirmation", {
     method: "POST",
-    body: JSON.stringify({ day, activity, confirmed }),
+    body: JSON.stringify({ day, activity, confirmed, event_id: eventId }),
   });
 }
 

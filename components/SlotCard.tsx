@@ -234,7 +234,7 @@ function SlotCardImpl({ slot, line, colors, events, onToggleConfirm }: SlotCardP
             {events.length === 0 ? (
               <span className="text-sm text-gray-400 dark:text-gray-500">No events yet…</span>
             ) : (
-              events.map((ev) => <EventCard key={`${ev.day}#${ev.activity.toLowerCase()}`} ev={ev} onToggleConfirm={onToggleConfirm} />)
+              events.map((ev) => <EventCard key={`${ev.day}#${ev.activity.toLowerCase()}#${ev.id ?? "fresh"}`} ev={ev} onToggleConfirm={onToggleConfirm} />)
             )}
           </div>
         </div>
