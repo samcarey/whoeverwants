@@ -164,9 +164,8 @@ const SUGGESTION_GROUPS: { key: keyof ActivitySuggestions; label: string }[] = [
   { key: "others", label: "Others have picked" },
 ];
 
-// Same top gap as the create-poll sheets.
-const SHEET_TOP_GAP = "calc(env(safe-area-inset-top, 0px) + 1.25rem)";
-const SHEET_HEIGHT_FALLBACK = `calc(100dvh - ${SHEET_TOP_GAP})`;
+// Same top gap as the create-poll sheets (SHEET_TOP_GAP there).
+const SHEET_HEIGHT = "calc(100dvh - env(safe-area-inset-top, 0px) - 1.25rem)";
 
 // UI cap on the participants counter; the server clamps to the same bound in
 // services/slots.py (_clean_people). Keep in lockstep.
@@ -352,35 +351,6 @@ export default function NewSlotSheet() {
       cancelled = true;
     };
   }, [isOpen, showActivity]);
-
-  // Visual-viewport rect the sheet is sized to, so it rides ABOVE the soft
-  // keyboard (iOS keeps the LAYOUT viewport full-height when the keyboard
-  // opens, so a layout-sized sheet puts its lower half — and any input the
-  // user just tapped — behind the keyboard and its accessory bar). Null =
-  // not yet measured → CSS fallback. Mirrors the create-poll sheet.
-  const [viewportH, setViewportH] = useState<number | null>(null);
-  const [viewportTop, setViewportTop] = useState(0);
-  useEffect(() => {
-    if (!isOpen) {
-      setViewportH(null);
-      setViewportTop(0);
-      return;
-    }
-    const vv = typeof window !== "undefined" ? window.visualViewport : null;
-    const onResize = () => {
-      setViewportH(vv ? vv.height : window.innerHeight);
-      setViewportTop(vv ? vv.offsetTop : 0);
-    };
-    onResize();
-    vv?.addEventListener("resize", onResize);
-    vv?.addEventListener("scroll", onResize);
-    window.addEventListener("resize", onResize);
-    return () => {
-      vv?.removeEventListener("resize", onResize);
-      vv?.removeEventListener("scroll", onResize);
-      window.removeEventListener("resize", onResize);
-    };
-  }, [isOpen]);
 
   // How recently the caller last picked each candidate in a who-with. Seeded
   // synchronously from the slot list the Playlist tab already loaded, then
@@ -636,23 +606,12 @@ export default function NewSlotSheet() {
         onClick={close}
         aria-hidden="true"
       />
-      {/* Visual-viewport-tracked so the sheet's bottom edge lands on the
-          keyboard's top instead of behind it. */}
-      <div
-        className="fixed left-0 w-full z-[60] flex items-end justify-center pointer-events-none"
-        style={{
-          top: `${viewportTop}px`,
-          height: viewportH != null ? `${viewportH}px` : "100dvh",
-        }}
-      >
+      <div className="fixed inset-0 z-[60] flex items-end justify-center pointer-events-none">
         <div
           ref={sheetRef}
           {...touchHandlers}
           className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
-          style={{
-            height:
-              viewportH != null ? `calc(${viewportH}px - ${SHEET_TOP_GAP})` : SHEET_HEIGHT_FALLBACK,
-          }}
+          style={{ height: SHEET_HEIGHT }}
           role="dialog"
           aria-modal="true"
           aria-label={title}
