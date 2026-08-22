@@ -12,11 +12,12 @@
  *   - 'activity' (tap an activity circle, or the cluster's "+"): JUST ONE
  *     activity — its name, emoji and who-with options. Opened with the
  *     activity's index to edit it (plus a red "Delete activity"), or without
- *     one to ADD a new activity, in which case a CHECKLIST of suggested
- *     activities (others planning this period / your past picks / others' past
- *     picks) sits below the form as a name+emoji picker. Activities already on
- *     the slot are hidden from it; only the "you've picked before" group
- *     carries an ✕, which blacklists that activity (behind a confirmation).
+ *     one to ADD a new activity, in which case focusing the name field drops
+ *     down its suggestions (others planning this period / your past picks /
+ *     others' past picks), grouped + narrowed by what's typed. Activities
+ *     already on the slot are hidden from it; only the "you've picked before"
+ *     group carries an ✕, which blacklists that activity (behind a
+ *     confirmation).
  *
  * Chrome mirrors the create-poll sheet (stationary dim backdrop at z-[59],
  * bottom-anchored opaque sheet at z-[60], fixed full height with the same
@@ -195,7 +196,7 @@ const EMOJI_PLACEHOLDER = "🙂";
 const EMPTY_SUGGESTIONS: ActivitySuggestions = { overlapping: [], yours: [], others: [] };
 
 const SUGGESTION_GROUPS: { key: keyof ActivitySuggestions; label: string }[] = [
-  { key: "overlapping", label: "Others planning this time" },
+  { key: "overlapping", label: "Others Have Picked for this Time" },
   { key: "yours", label: "You've picked before" },
   { key: "others", label: "Others have picked" },
 ];
@@ -260,6 +261,8 @@ export default function NewSlotSheet() {
   const [activityIndex, setActivityIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<ActivityDraft>(EMPTY_DRAFT);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  // The activity-name field's suggestion dropdown is open while it's focused.
+  const [nameFocused, setNameFocused] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState<Date>(monthOfToday);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
   const [suggestions, setSuggestions] = useState<ActivitySuggestions>(EMPTY_SUGGESTIONS);
@@ -314,6 +317,7 @@ export default function NewSlotSheet() {
           : EMPTY_DRAFT,
       );
       setEmojiOpen(false);
+      setNameFocused(false);
       setCalendarMonth(monthForSlot(slot));
       // Editing time: expand to the slot's real month ONLY when its picked
       // days fall outside the compact grid's rolling 3 weeks from today; if
@@ -575,16 +579,19 @@ export default function NewSlotSheet() {
   }, [editingSlot, activityIndex, saving, deleting, close]);
 
   // Activities already on the slot shouldn't appear as suggestions — except
-  // the one being renamed into, which is the draft's own current pick.
+  // the one being renamed into, which is the draft's own current pick. The
+  // list also narrows as the name is typed (it's the field's own dropdown).
   const filteredSuggestions = useMemo<ActivitySuggestions>(() => {
     const taken = new Set((editingSlot?.activities ?? []).map((a) => nameKey(a.name)));
-    const drop = (list: ActivitySuggestion[]) => list.filter((a) => !taken.has(nameKey(a.name)));
+    const q = nameKey(draft.name);
+    const drop = (list: ActivitySuggestion[]) =>
+      list.filter((a) => !taken.has(nameKey(a.name)) && (!q || nameKey(a.name).includes(q)));
     return {
       overlapping: drop(suggestions.overlapping),
       yours: drop(suggestions.yours),
       others: drop(suggestions.others),
     };
-  }, [suggestions, editingSlot]);
+  }, [suggestions, editingSlot, draft.name]);
 
   const hasSuggestions = useMemo(
     () => SUGGESTION_GROUPS.some((g) => filteredSuggestions[g.key].length > 0),
@@ -773,76 +780,46 @@ export default function NewSlotSheet() {
 
             {showActivity && (<>
             {/* Emoji + name — the activity itself. */}
-            <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setEmojiOpen(true)}
-                aria-label="Choose an emoji"
-                className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-xl leading-none active:scale-95"
-              >
-                <span className={draft.emoji.trim() ? "" : "opacity-40"}>
-                  {draft.emoji.trim() || EMOJI_PLACEHOLDER}
-                </span>
-              </button>
-              <input
-                value={draft.name}
-                onChange={(e) => setName(e.target.value)}
-                onBlur={(e) => setName(e.target.value.trim())}
-                placeholder="Activity"
-                aria-label="Activity name"
-                className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
-              />
-            </section>
-
-            {/* The activity's who-with condition — ONE always-present card in
-                the settings-card format (label/value rows over hairlines):
-                who it's with, the party-size range, and who it's explicitly
-                NOT with. "With"/"Without" expand in place into a search box +
-                suggestions, and keep their picks as pills under the row. */}
-            <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
-              <CandidatePicker
-                label="With"
-                emptyValue="Anyone"
-                selected={withSelected}
-                options={candidateOptions}
-                onAdd={(c) => toggleEntryName(c.kind, c.name)}
-                onRemove={(c) => toggleEntryName(c.kind, c.name)}
-              />
-              <PartyCountField label="At Least" value={draft.entry.minPeople} setValue={setMinPeople} />
-              <PartyCountField
-                label="No More Than"
-                value={draft.entry.maxPeople}
-                setValue={setMaxPeople}
-                min={draft.entry.minPeople}
-              />
-              <CandidatePicker
-                label="Without"
-                emptyValue="No one"
-                selected={withoutSelected}
-                options={candidateOptions}
-                onAdd={(c) => toggleEntryName(excludeField(c.kind), c.name)}
-                onRemove={(c) => toggleEntryName(excludeField(c.kind), c.name)}
-              />
-            </section>
-
-            {/* Name picker while ADDING: suggested activities grouped +
-                labeled by priority. Tapping one names the draft (and takes
-                its emoji); tapping the chosen one clears it. Only the "you've
-                picked before" group carries an ✕ to delete (behind a
-                confirmation → blacklist); the others (things other people are
-                doing) can't be deleted. */}
-            {isNewActivity && hasSuggestions && (
-              <div>
-                <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
-                  Suggestions
-                </label>
-                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-2 divide-y divide-gray-200 dark:divide-gray-700">
+            <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEmojiOpen(true)}
+                  aria-label="Choose an emoji"
+                  className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-xl leading-none active:scale-95"
+                >
+                  <span className={draft.emoji.trim() ? "" : "opacity-40"}>
+                    {draft.emoji.trim() || EMOJI_PLACEHOLDER}
+                  </span>
+                </button>
+                <input
+                  value={draft.name}
+                  onChange={(e) => setName(e.target.value)}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={(e) => {
+                    setName(e.target.value.trim());
+                    setNameFocused(false);
+                  }}
+                  placeholder="Activity"
+                  aria-label="Activity name"
+                  className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                />
+              </div>
+              {/* The field's own dropdown while ADDING: suggested activities
+                  grouped + labeled by priority, narrowed by what's typed.
+                  Tapping one names the draft (and takes its emoji); tapping
+                  the chosen one clears it. Only the "you've picked before"
+                  group carries an ✕ to delete (behind a confirmation →
+                  blacklist); the others (things other people are doing) can't
+                  be deleted. */}
+              {isNewActivity && nameFocused && hasSuggestions && (
+                <div className="mt-3 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
                   {SUGGESTION_GROUPS.map((group) => {
                     const items = filteredSuggestions[group.key];
                     if (items.length === 0) return null;
                     const canDelete = group.key === "yours";
                     return (
-                      <div key={group.key} className="py-2">
+                      <div key={group.key} className="px-3 py-2">
                         <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
                           {group.label}
                         </p>
@@ -850,7 +827,13 @@ export default function NewSlotSheet() {
                           {items.map((activity) => {
                             const checked = nameKey(draft.name) === nameKey(activity.name);
                             return (
-                              <li key={activity.name} className="flex items-center gap-3 h-11">
+                              <li
+                                key={activity.name}
+                                className="flex items-center gap-3 h-11"
+                                // Commit before the input blurs (blur closes
+                                // the dropdown).
+                                onMouseDown={(e) => e.preventDefault()}
+                              >
                                 <button
                                   type="button"
                                   role="checkbox"
@@ -895,9 +878,41 @@ export default function NewSlotSheet() {
                       </div>
                     );
                   })}
-                </section>
-              </div>
-            )}
+                </div>
+              )}
+            </section>
+
+            {/* The activity's who-with condition — ONE always-present card in
+                the settings-card format (label/value rows over hairlines):
+                who it's with, the party-size range, and who it's explicitly
+                NOT with. "With"/"Without" expand in place into a search box +
+                suggestions, and keep their picks as pills under the row. */}
+            <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+              <CandidatePicker
+                label="With"
+                emptyValue="Anyone"
+                selected={withSelected}
+                options={candidateOptions}
+                onAdd={(c) => toggleEntryName(c.kind, c.name)}
+                onRemove={(c) => toggleEntryName(c.kind, c.name)}
+              />
+              <PartyCountField label="At Least" value={draft.entry.minPeople} setValue={setMinPeople} />
+              <PartyCountField
+                label="No More Than"
+                value={draft.entry.maxPeople}
+                setValue={setMaxPeople}
+                min={draft.entry.minPeople}
+              />
+              <CandidatePicker
+                label="Without"
+                emptyValue="No one"
+                selected={withoutSelected}
+                options={candidateOptions}
+                onAdd={(c) => toggleEntryName(excludeField(c.kind), c.name)}
+                onRemove={(c) => toggleEntryName(excludeField(c.kind), c.name)}
+              />
+            </section>
+
             </>)}
 
             {isEditing && (mode === "time" || (showActivity && !isNewActivity)) && (
