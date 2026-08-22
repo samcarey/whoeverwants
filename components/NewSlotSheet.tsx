@@ -44,6 +44,7 @@ import CandidatePicker, { candidateKey, type Candidate } from "@/components/Cand
 import PartyCountField from "@/components/PartyCountField";
 import ModalPortal from "@/components/ModalPortal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
+import { cancelPrimedFocus, consumePrimedFocus } from "@/lib/useKeyboardPrimer";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
 import { DEFAULT_TIME_WINDOW, formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
 import { haptic } from "@/lib/haptics";
@@ -68,6 +69,7 @@ import {
   SLOT_SHEET_OPEN_EVENT,
   notifySlotsChanged,
   setAddPanelActive,
+  scrollAddPanelToTop,
   type SlotSheetMode,
   type SlotSheetOpenDetail,
 } from "@/lib/slotEvents";
@@ -314,7 +316,26 @@ export default function NewSlotSheet() {
     return () => setAddPanelActive(false);
   }, [isAddActivity]);
 
-  const close = useCallback(() => setIsOpen(false), []);
+  // Then slide the page up until the panel (pinned in the document under the
+  // tapped "+") is at the top of the screen. Two rAFs: the timeline's
+  // header-collapse + extra bottom padding — what makes the target reachable —
+  // land on the render triggered by the effect above.
+  useEffect(() => {
+    if (!isAddActivity || anchorBottom == null) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => scrollAddPanelToTop(anchorBottom));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [isAddActivity, anchorBottom]);
+
+  const close = useCallback(() => {
+    cancelPrimedFocus();
+    setIsOpen(false);
+  }, []);
 
   // Open driven by the slot-sheet event channel. Time mode prefills the window
   // and centers the calendar on the slot's day; activity mode seeds the draft
@@ -687,6 +708,9 @@ export default function NewSlotSheet() {
           </span>
         </button>
         <input
+          // Takes the keyboard primed by the "+" tap (add panel only; a no-op
+          // otherwise) and selects, so the field opens ready to type.
+          ref={consumePrimedFocus}
           value={draft.name}
           onChange={(e) => setName(e.target.value)}
           onFocus={(e) => {
@@ -792,10 +816,15 @@ export default function NewSlotSheet() {
         <>
           <div className="fixed inset-0 z-[59]" onClick={close} aria-hidden="true" />
           <div
-            className="fixed left-0 right-0 z-[60] px-3 pointer-events-none"
+            // ABSOLUTE, not fixed: the panel is pinned in the DOCUMENT under
+            // the tapped "+" so it rides the smooth scroll up to the top of
+            // the screen with the rest of the page.
+            className={`left-0 right-0 z-[60] px-3 pointer-events-none ${
+              anchorBottom != null ? "absolute" : "fixed"
+            }`}
             style={
               anchorBottom != null
-                ? { top: `${anchorBottom + 8}px` }
+                ? { top: `${anchorBottom}px` }
                 : { top: 0, paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.5rem)" }
             }
           >

@@ -43,9 +43,9 @@ export interface SlotSheetOpenDetail {
   /** 'activity' mode only: which of the slot's activities to edit. null = add
    *  a new one. */
   activityIndex: number | null;
-  /** Viewport y the ADD panel should hang from — the bottom of the "+" that
-   *  opened it, measured AFTER `scrollAnchorToTop` put it at the top of the
-   *  screen. Absent → the panel pins to the top of the viewport. */
+  /** DOCUMENT y the ADD panel is pinned at — just under the "+" that opened
+   *  it (see anchorRowForAddPanel). Absent → the panel pins to the top of the
+   *  viewport instead. */
   anchorBottom: number | null;
 }
 
@@ -71,43 +71,41 @@ export function openSlotSheet(
   );
 }
 
-/** Smooth-scroll the tapped row so its day divider + time land at the top of
- *  the screen — the column headers drop out of the flow, pulling everything up
- *  by their height and shifting both sticky tiers to the top — and return the
- *  viewport y the add panel should hang from: just under that row's time.
+/** Pin the add panel just under the tapped "+" IN THE DOCUMENT (not the
+ *  viewport) and smooth-scroll until that lands at the top of the screen —
+ *  so the whole page slides up and the text box ends up at the top, clear of
+ *  the keyboard. Returns the panel's document y.
  *
- *  Everything is computed from the row's NORMAL-FLOW position, before the
- *  scroll starts — the time chip may already be stuck, so its current rect
- *  isn't a reliable input, and a smooth scroll can't be measured after the
- *  fact. When the page can't scroll far enough (the row is near the document
- *  end) the shortfall is added back, so the panel still lands under the row's
- *  real resting place rather than an assumed one.
+ *  Two adjustments make the target reachable and correct:
+ *   - the column headers leave the flow when the panel opens, pulling every
+ *     row (and so the anchor) up by their height;
+ *   - the timeline grows a viewport of bottom padding while the panel is up
+ *     (see PlaylistTab), so even the LAST row can reach the top instead of
+ *     stopping at the document's end — the "page hardly moves" case.
  */
-export function anchorRowForAddPanel(plusEl: HTMLElement): number | null {
-  const card = plusEl.closest<HTMLElement>("[data-slot-card]");
-  const chip = card?.querySelector<HTMLElement>("[data-slot-time]");
-  if (!card || !chip) return null;
-
+export function anchorRowForAddPanel(plusEl: HTMLElement): number {
   const headerH = document.querySelector<HTMLElement>("[data-playlist-headers]")?.offsetHeight ?? 0;
-  // Where the chip parks once the headers are hidden.
-  const chipTop = (parseFloat(getComputedStyle(chip).top) || 0) - headerH;
-  const cardPadTop = parseFloat(getComputedStyle(card).paddingTop) || 0;
-  const chipH = chip.getBoundingClientRect().height;
+  return window.scrollY + plusEl.getBoundingClientRect().bottom + 8 - headerH;
+}
 
-  // The headers are about to leave the flow, pulling every row up by their
-  // height — so the page needs that much LESS scroll, and has that much less
-  // to give. (They sit above every row, so the shift is uniform.)
-  const want =
-    window.scrollY + card.getBoundingClientRect().top - (chipTop - cardPadTop) - headerH;
-  const maxScroll = Math.max(
-    0,
-    document.documentElement.scrollHeight - headerH - window.innerHeight,
-  );
-  const target = Math.min(Math.max(0, want), maxScroll);
-  window.scrollTo({ top: target, behavior: "smooth" });
+/** Smooth-scroll so the panel pinned at `docY` sits at the top of the screen.
+ *  Called from the panel's own mount effect, NOT the tap: the scroll room it
+ *  needs (the timeline's extra bottom padding) and the header collapse both
+ *  land with that render, a commit or two after the tap. */
+export function scrollAddPanelToTop(docY: number): void {
+  window.scrollTo({ top: Math.max(0, docY - safeAreaTop()), behavior: "smooth" });
+}
 
-  // The chip's settled BOTTOM — the panel adds its own gap under it.
-  return chipTop + Math.max(0, want - target) + chipH;
+/** env(safe-area-inset-top) in px, via a throwaway probe — the notch band the
+ *  panel has to clear. 0 on every non-notched surface. */
+function safeAreaTop(): number {
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top,0px);pointer-events:none;opacity:0;";
+  document.body.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  probe.remove();
+  return h;
 }
 
 /** Tell the Playlist tab a slot was created / edited / deleted. */

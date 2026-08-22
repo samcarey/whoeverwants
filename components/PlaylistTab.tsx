@@ -167,7 +167,14 @@ export default function PlaylistTab() {
   return (
     <div
       className="pt-2"
-      style={{ [PLAYLIST_HEADER_H_VAR]: addingActivity ? "0px" : "39.6px" } as React.CSSProperties}
+      style={
+        {
+          [PLAYLIST_HEADER_H_VAR]: addingActivity ? "0px" : "39.6px",
+          // Room for ANY row — including the last — to scroll to the top of
+          // the screen while the add panel is up.
+          paddingBottom: addingActivity ? "100vh" : undefined,
+        } as React.CSSProperties
+      }
     >
       {header}
       {entries.length === 0 && (

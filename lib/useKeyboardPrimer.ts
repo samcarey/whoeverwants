@@ -75,3 +75,56 @@ export function useKeyboardPrimer(options?: { selectOnFocus?: boolean }) {
 
   return { prime, focusOnMount, cancel };
 }
+
+// ---------------------------------------------------------------------------
+// Module-level variant, for when the tap and the input live in DIFFERENT
+// components (the Playlist "+" is on a timeline card; the field it opens is in
+// the layout-level slot sheet, so there's no shared hook instance to hold the
+// primer). Same contract as the hook: prime inside the tap, consume when the
+// real input attaches.
+// ---------------------------------------------------------------------------
+
+let sharedPrimer: HTMLInputElement | null = null;
+let sharedPending = false;
+
+function removeSharedPrimer(): void {
+  const el = sharedPrimer;
+  if (el) {
+    sharedPrimer = null;
+    el.remove();
+  }
+}
+
+/** Call synchronously inside the tap handler that opens the input's owner. */
+export function primeKeyboardNow(): void {
+  if (typeof document === 'undefined') return;
+  removeSharedPrimer();
+  sharedPending = true;
+  const tmp = document.createElement('input');
+  tmp.type = 'text';
+  tmp.setAttribute('aria-hidden', 'true');
+  tmp.tabIndex = -1;
+  tmp.style.cssText =
+    'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;border:0;padding:0;margin:0;background:transparent;';
+  document.body.appendChild(tmp);
+  tmp.focus({ preventScroll: true });
+  sharedPrimer = tmp;
+  window.setTimeout(removeSharedPrimer, 1500);
+}
+
+/** Callback ref for the real input: takes the primed focus (and selects) when
+ *  it attaches. A no-op when nothing primed, so inputs that are sometimes
+ *  opened another way can wear it unconditionally. */
+export function consumePrimedFocus(node: HTMLInputElement | null): void {
+  if (!node || !sharedPending) return;
+  sharedPending = false;
+  node.focus({ preventScroll: true });
+  node.select();
+  removeSharedPrimer();
+}
+
+/** Abort a primed-but-unconsumed transfer. */
+export function cancelPrimedFocus(): void {
+  sharedPending = false;
+  removeSharedPrimer();
+}

@@ -38,6 +38,7 @@ import {
   type SlotWindowLine,
 } from "@/lib/slotUtils";
 import { openSlotSheet, anchorRowForAddPanel, PLAYLIST_HEADER_H_VAR } from "@/lib/slotEvents";
+import { primeKeyboardNow } from "@/lib/useKeyboardPrimer";
 
 interface SlotCardProps {
   slot: Slot;
@@ -168,8 +169,9 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
               onClick={(e) => {
                 // Put the "+" at the top of the screen first, then hang the
                 // add panel off its settled position.
-                // Scroll this row's day + time to the top, then hang the add
-                // panel just under the time.
+                // Claim the keyboard for the field that mounts a commit later,
+                // then pin the panel under this "+" and scroll it to the top.
+                primeKeyboardNow();
                 const anchorBottom = anchorRowForAddPanel(e.currentTarget);
                 openSlotSheet(slot, "activity", null, anchorBottom);
               }}
