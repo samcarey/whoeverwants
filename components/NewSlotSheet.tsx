@@ -10,14 +10,15 @@
  *   - 'time' (tap a slot's time text): the same calendar + single-slot UI,
  *     prefilled, editing JUST the date/time. "Delete slot" lives here.
  *   - 'activity' (tap an activity circle, or the cluster's "+"): JUST ONE
- *     activity — its name, emoji and who-with options. Opened with the
- *     activity's index to edit it (plus a red "Delete activity"), or without
- *     one to ADD a new activity, in which case focusing the name field drops
- *     down its suggestions (others planning this period / your past picks /
- *     others' past picks), grouped + narrowed by what's typed. Activities
- *     already on the slot are hidden from it; only the "you've picked before"
- *     group carries an ✕, which blacklists that activity (behind a
- *     confirmation).
+ *     activity. ADDING (no index) is only "which activity?" — the name +
+ *     emoji field, nothing else; you tap the activity afterward to say who
+ *     it's with. EDITING (with an index) adds the who-with card + a red
+ *     "Delete activity". In BOTH, focusing the name field drops down its
+ *     suggestions (others planning this period / your past picks / others'
+ *     past picks), grouped + narrowed by what's typed. Activities already on
+ *     the slot are hidden from it (except the one being edited); only the
+ *     "you've picked before" group carries an ✕, which blacklists that
+ *     activity (behind a confirmation).
  *
  * Chrome mirrors the create-poll sheet (stationary dim backdrop at z-[59],
  * bottom-anchored opaque sheet at z-[60], fixed full height with the same
@@ -334,14 +335,14 @@ export default function NewSlotSheet() {
     return () => window.removeEventListener(SLOT_SHEET_OPEN_EVENT, onOpen);
   }, []);
 
-  // Fetch ranked activity suggestions (the name picker shown while ADDING),
-  // debounced on the selected period — group 1 depends on which windows
-  // overlap other users' slots. A request token guards against a stale
-  // response landing after a newer one.
+  // Fetch ranked activity suggestions (the name field's dropdown, in BOTH
+  // add + edit modes), debounced on the selected period — group 1 depends on
+  // which windows overlap other users' slots. A request token guards against
+  // a stale response landing after a newer one.
   const dtwKey = JSON.stringify(dayTimeWindows);
   const reqTokenRef = useRef(0);
   useEffect(() => {
-    if (!isOpen || !showActivity || !isNewActivity) return;
+    if (!isOpen || !showActivity) return;
     const token = ++reqTokenRef.current;
     const t = setTimeout(() => {
       apiGetActivitySuggestions(dayTimeWindows)
@@ -355,7 +356,7 @@ export default function NewSlotSheet() {
     return () => clearTimeout(t);
     // dtwKey is the stable content signature of dayTimeWindows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, showActivity, isNewActivity, dtwKey]);
+  }, [isOpen, showActivity, dtwKey]);
 
   // Who-with picker sources: the caller's group names + contact names,
   // fetched once per activity-mode open (null = loading). Names already on an
@@ -582,7 +583,11 @@ export default function NewSlotSheet() {
   // the one being renamed into, which is the draft's own current pick. The
   // list also narrows as the name is typed (it's the field's own dropdown).
   const filteredSuggestions = useMemo<ActivitySuggestions>(() => {
-    const taken = new Set((editingSlot?.activities ?? []).map((a) => nameKey(a.name)));
+    const taken = new Set(
+      (editingSlot?.activities ?? [])
+        .filter((_, i) => i !== activityIndex)
+        .map((a) => nameKey(a.name)),
+    );
     const q = nameKey(draft.name);
     const drop = (list: ActivitySuggestion[]) =>
       list.filter((a) => !taken.has(nameKey(a.name)) && (!q || nameKey(a.name).includes(q)));
@@ -591,7 +596,7 @@ export default function NewSlotSheet() {
       yours: drop(suggestions.yours),
       others: drop(suggestions.others),
     };
-  }, [suggestions, editingSlot, draft.name]);
+  }, [suggestions, editingSlot, activityIndex, draft.name]);
 
   const hasSuggestions = useMemo(
     () => SUGGESTION_GROUPS.some((g) => filteredSuggestions[g.key].length > 0),
@@ -795,7 +800,13 @@ export default function NewSlotSheet() {
                 <input
                   value={draft.name}
                   onChange={(e) => setName(e.target.value)}
-                  onFocus={() => setNameFocused(true)}
+                  onFocus={(e) => {
+                    setNameFocused(true);
+                    // Pre-filled (edit mode): select all so the first keystroke
+                    // replaces the name — and the dropdown, which narrows on
+                    // what's typed, opens back up to the full list.
+                    e.currentTarget.select();
+                  }}
                   onBlur={(e) => {
                     setName(e.target.value.trim());
                     setNameFocused(false);
@@ -805,14 +816,14 @@ export default function NewSlotSheet() {
                   className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
                 />
               </div>
-              {/* The field's own dropdown while ADDING: suggested activities
+              {/* The field's own dropdown: suggested activities
                   grouped + labeled by priority, narrowed by what's typed.
                   Tapping one names the draft (and takes its emoji); tapping
                   the chosen one clears it. Only the "you've picked before"
                   group carries an ✕ to delete (behind a confirmation →
                   blacklist); the others (things other people are doing) can't
                   be deleted. */}
-              {isNewActivity && nameFocused && hasSuggestions && (
+              {nameFocused && hasSuggestions && (
                 <div className="mt-3 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
                   {SUGGESTION_GROUPS.map((group) => {
                     const items = filteredSuggestions[group.key];
@@ -882,11 +893,14 @@ export default function NewSlotSheet() {
               )}
             </section>
 
-            {/* The activity's who-with condition — ONE always-present card in
-                the settings-card format (label/value rows over hairlines):
-                who it's with, the party-size range, and who it's explicitly
-                NOT with. "With"/"Without" expand in place into a search box +
+            {/* The activity's who-with condition, EDIT MODE ONLY — adding is
+                just "which activity?", and you tap the activity afterward to
+                say who it's with. One card in the settings-card format
+                (label/value rows over hairlines): who it's with, the
+                party-size range, and who it's explicitly NOT with.
+                "With"/"Without" expand in place into a search box +
                 suggestions, and keep their picks as pills under the row. */}
+            {!isNewActivity && (
             <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
               <CandidatePicker
                 label="With"
@@ -912,6 +926,7 @@ export default function NewSlotSheet() {
                 onRemove={(c) => toggleEntryName(excludeField(c.kind), c.name)}
               />
             </section>
+            )}
 
             </>)}
 
