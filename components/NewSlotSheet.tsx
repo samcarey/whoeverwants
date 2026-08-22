@@ -266,6 +266,10 @@ export default function NewSlotSheet() {
   const [emojiOpen, setEmojiOpen] = useState(false);
   // The activity-name field's suggestion dropdown is open while it's focused.
   const [nameFocused, setNameFocused] = useState(false);
+  // Viewport y the ADD panel hangs from: the bottom of the "+" that opened it,
+  // already scrolled to the top of the screen (see scrollAnchorToTop). Null =
+  // pin to the top of the viewport.
+  const [anchorBottom, setAnchorBottom] = useState<number | null>(null);
   const [calendarMonth, setCalendarMonth] = useState<Date>(monthOfToday);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
   const [suggestions, setSuggestions] = useState<ActivitySuggestions>(EMPTY_SUGGESTIONS);
@@ -309,6 +313,7 @@ export default function NewSlotSheet() {
       const detail = (e as CustomEvent<SlotSheetOpenDetail>).detail;
       const slot = detail?.slot ?? null;
       const index = detail?.activityIndex ?? null;
+      setAnchorBottom(detail?.anchorBottom ?? null);
       const existing = index !== null ? slot?.activities[index] : undefined;
       setMode(detail?.mode ?? (slot ? "time" : "create"));
       setEditingSlot(slot);
@@ -778,8 +783,12 @@ export default function NewSlotSheet() {
         <>
           <div className="fixed inset-0 z-[59]" onClick={close} aria-hidden="true" />
           <div
-            className="fixed left-0 right-0 top-0 z-[60] px-3 pointer-events-none"
-            style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.5rem)" }}
+            className="fixed left-0 right-0 z-[60] px-3 pointer-events-none"
+            style={
+              anchorBottom != null
+                ? { top: `${anchorBottom + 8}px` }
+                : { top: 0, paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.5rem)" }
+            }
           >
             <div
               className="pointer-events-auto mx-auto w-full sm:max-w-md rounded-3xl bg-gray-100 dark:bg-gray-900 p-2 shadow-2xl flex items-start gap-2"

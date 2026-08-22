@@ -28,6 +28,10 @@ export interface SlotSheetOpenDetail {
   /** 'activity' mode only: which of the slot's activities to edit. null = add
    *  a new one. */
   activityIndex: number | null;
+  /** Viewport y the ADD panel should hang from — the bottom of the "+" that
+   *  opened it, measured AFTER `scrollAnchorToTop` put it at the top of the
+   *  screen. Absent → the panel pins to the top of the viewport. */
+  anchorBottom: number | null;
 }
 
 /** Open the slot sheet. Omit the slot for a new one ('create'); pass a slot +
@@ -37,6 +41,7 @@ export function openSlotSheet(
   slot?: Slot,
   mode?: SlotSheetMode,
   activityIndex?: number | null,
+  anchorBottom?: number | null,
 ): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
@@ -45,9 +50,37 @@ export function openSlotSheet(
         slot: slot ?? null,
         mode: mode ?? (slot ? "time" : "create"),
         activityIndex: activityIndex ?? null,
+        anchorBottom: anchorBottom ?? null,
       },
     }),
   );
+}
+
+/** Scroll `el` (the tapped "+") to the top of the screen and return its
+ *  settled viewport bottom, so the add-activity panel can sit right under it.
+ *  Runs BEFORE the sheet opens: once it's open the body is scroll-locked at
+ *  whatever position we leave here. The scroll clamps at the document end, so
+ *  the returned value — not the assumed top — is what the panel hangs from.
+ *
+ *  `behavior: "instant"` is load-bearing: the caller measures immediately
+ *  afterwards, and a smooth scroll would still be animating. */
+export function scrollAnchorToTop(el: HTMLElement): number {
+  const gap = 8;
+  const top = el.getBoundingClientRect().top;
+  window.scrollTo({ top: Math.max(0, window.scrollY + top - safeAreaTop() - gap), behavior: "instant" });
+  return el.getBoundingClientRect().bottom;
+}
+
+/** env(safe-area-inset-top) in px, via a throwaway probe — the notch band the
+ *  anchor has to clear. 0 on every non-notched surface. */
+function safeAreaTop(): number {
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top,0px);pointer-events:none;opacity:0;";
+  document.body.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  probe.remove();
+  return h;
 }
 
 /** Tell the Playlist tab a slot was created / edited / deleted. */

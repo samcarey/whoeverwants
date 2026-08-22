@@ -37,7 +37,7 @@ import {
   type ActivityColor,
   type SlotWindowLine,
 } from "@/lib/slotUtils";
-import { openSlotSheet } from "@/lib/slotEvents";
+import { openSlotSheet, scrollAnchorToTop } from "@/lib/slotEvents";
 
 interface SlotCardProps {
   slot: Slot;
@@ -159,7 +159,12 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             {/* Last circle of the pattern — the only way to add an activity. */}
             <button
               type="button"
-              onClick={() => openSlotSheet(slot, "activity")}
+              onClick={(e) => {
+                // Put the "+" at the top of the screen first, then hang the
+                // add panel off its settled position.
+                const anchorBottom = scrollAnchorToTop(e.currentTarget);
+                openSlotSheet(slot, "activity", null, anchorBottom);
+              }}
               aria-label="Add an activity"
               style={{
                 left: plusPosition.x,
