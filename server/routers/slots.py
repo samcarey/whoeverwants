@@ -1,4 +1,5 @@
-"""Playlist slots: create a slot + fetch ranked activity suggestions.
+"""Playlist slots: CRUD a slot, fetch ranked activity suggestions, and serve
+the "who with" picker its candidates.
 
 Identity mirrors poll authorship: the caller's account is resolved via
 `resolve_actor_user_id` (bearer session, else the browser-linked account),
@@ -16,7 +17,7 @@ from database import get_db
 from middleware import browser_id_from_request as _browser_id
 from middleware import user_id_from_request as _user_id
 from services.auth import create_anonymous_user, resolve_actor_user_id
-from services.contacts import list_invitable_accounts, reconcile_contacts
+from services.contacts import reconcile_contacts
 from services.groups import require_uuid
 from services.slots import (
     create_slot,
@@ -25,28 +26,47 @@ from services.slots import (
     purge_past_slots,
     suggest_activities,
     update_slot,
+    who_with_candidates,
 )
 
 router = APIRouter(prefix="/api/slots", tags=["slots"])
 
-# A group id that no group has, so `list_invitable_accounts`' "not already a
-# member of THIS group" exclusion is a no-op → it returns the caller's whole
-# contact list. Lets the slot form's "Who With → Pick" picker reuse the same
-# address book the group invite-members search uses, minus any group scope.
-_NO_GROUP_ID = "00000000-0000-0000-0000-000000000000"
+
+class WhoWithRef(BaseModel):
+    # One who-with reference: the real identity (a groups.id / users.id) plus
+    # the display name captured at pick time. `id` is null for a name-only pick
+    # — either a legacy/raw-API bare string, or an id that didn't resolve to
+    # something the owner can reach (see services.slots._resolve_who_with).
+    id: str | None = None
+    name: str
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _blank_id_is_none(cls, v):
+        return v or None
 
 
 class WhoWithEntry(BaseModel):
     # One "who with" entry: an optional participant range with its own set of
-    # groups and/or specific people (display-name strings, sanitized + capped
-    # in services.slots), plus the exclude_* lists — groups/people the owner
-    # would NOT do the activity with.
+    # groups and/or specific people, plus the exclude_* lists — groups/people
+    # the owner would NOT do the activity with. Each list holds WhoWithRefs,
+    # sanitized + capped + identity-resolved in services.slots.
     min_people: int | None = None
     max_people: int | None = None
-    groups: list[str] | None = None
-    people: list[str] | None = None
-    exclude_groups: list[str] | None = None
-    exclude_people: list[str] | None = None
+    groups: list[WhoWithRef] | None = None
+    people: list[WhoWithRef] | None = None
+    exclude_groups: list[WhoWithRef] | None = None
+    exclude_people: list[WhoWithRef] | None = None
+
+    @field_validator("groups", "people", "exclude_groups", "exclude_people", mode="before")
+    @classmethod
+    def _coerce_refs(cls, v):
+        # Tolerate bare-string refs (older clients / raw-API callers) by
+        # coercing them to name-only refs — the same tolerance
+        # `_coerce_activities` gives bare-string activities.
+        if isinstance(v, list):
+            return [{"name": x} if isinstance(x, str) else x for x in v]
+        return v
 
 
 class ActivityInput(BaseModel):
@@ -156,38 +176,29 @@ def list_slots_endpoint(request: Request):
     return SlotListResponse(slots=[SlotResponse(**s) for s in slots])
 
 
-class ContactResponse(BaseModel):
-    """One pickable person for the slot form's "Who With → Pick" list: an
-    account the caller has shared a group with (their `user_contacts` address
-    book). Mirrors the group invite-members row, without a group scope."""
+class WhoWithCandidatesResponse(BaseModel):
+    """Everything the caller can point an activity's "who with" at: the groups
+    they're a member of and the people in their address book, each as the same
+    {id, name} reference shape a saved who-with stores. Most-recently-referenced
+    first (by the caller's own past picks), then alphabetical."""
 
-    user_id: str
-    name: str | None
-    shared_group_count: int
-    last_seen_at: str
+    groups: list[WhoWithRef] = []
+    people: list[WhoWithRef] = []
 
 
-@router.get("/contacts", response_model=list[ContactResponse])
-def list_contacts_endpoint(request: Request):
-    # Read-only source for the "Who With → Pick" picker: every account the
-    # caller has encountered, newest-shared first. Empty for a fresh
-    # anonymous browser with no account yet. Reconciles inline so freshly
-    # shared contacts appear (same as the group invite-members endpoint).
+@router.get("/who-with-candidates", response_model=WhoWithCandidatesResponse)
+def who_with_candidates_endpoint(request: Request):
+    # The picker's single source. Deliberately the SAME population
+    # `services.slots._resolve_who_with` validates saves against, so the picker
+    # can't offer something that would then be nulled on save. Empty for a
+    # fresh anonymous browser with no account yet. Reconciles contacts inline
+    # so freshly shared people appear (same as the invite-members endpoint).
     with get_db() as conn:
         user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=_browser_id(request))
-        if not user_id:
-            return []
-        reconcile_contacts(conn, user_id)
-        accounts = list_invitable_accounts(conn, user_id, _NO_GROUP_ID)
-    return [
-        ContactResponse(
-            user_id=a.user_id,
-            name=a.name,
-            shared_group_count=a.shared_group_count,
-            last_seen_at=a.last_seen_at.isoformat() if a.last_seen_at else "",
-        )
-        for a in accounts
-    ]
+        if user_id:
+            reconcile_contacts(conn, user_id)
+        candidates = who_with_candidates(conn, user_id=user_id)
+    return WhoWithCandidatesResponse(**candidates)
 
 
 @router.put("/{slot_id}", response_model=CreateSlotResponse)

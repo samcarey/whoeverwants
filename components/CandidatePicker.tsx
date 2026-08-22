@@ -19,12 +19,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboardPrimer } from "@/lib/useKeyboardPrimer";
 
 export interface Candidate {
-  /** Matches the wire field the name belongs to on a who-with entry. */
+  /** Matches the wire field the ref belongs to on a who-with entry. */
   kind: "groups" | "people";
+  /** The real group / account id, or null for a name-only reference (a legacy
+   *  pick, or one whose id the server couldn't resolve). */
+  id: string | null;
   name: string;
 }
 
-export const candidateKey = (c: Candidate) => `${c.kind}:${c.name.trim().toLowerCase()}`;
+/** Identity first, so two same-named contacts are two candidates and a renamed
+ *  group stays the same one. Name-only refs fall back to the name. */
+export const candidateKey = (c: Candidate) =>
+  c.id ? `${c.kind}:${c.id}` : `${c.kind}:name:${c.name.trim().toLowerCase()}`;
 
 /** Same "people" glyph as GroupsIcon, at pill/row size in currentColor —
  *  the only thing distinguishing a group from a person here. */

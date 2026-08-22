@@ -15,7 +15,10 @@
  *     timeline rather than in the sheet (no dim; an outside tap closes it);
  *     you tap the activity afterward to say who it's with. EDITING (with an
  *     index) is the full sheet: that same field plus the who-with card and a
- *     red "Delete activity". Picking a suggestion fills the name + emoji and
+ *     red "Delete activity". The who-with card's With/Without pickers draw on
+ *     `apiGetWhoWithCandidates` — the caller's groups + address book, ordered
+ *     by how recently they last picked each — and store real ids, not names.
+ *     Picking a suggestion fills the name + emoji and
  *     collapses the list. The add panel has NO ✓ — closing the keyboard (the
  *     iOS Done) commits it. In BOTH, focusing the name field drops down its
  *     suggestions (others planning this period / your past picks / others'
@@ -52,20 +55,18 @@ import { DEFAULT_TIME_WINDOW, formatMonthYearLabel, shiftMonth } from "@/lib/tim
 import { haptic } from "@/lib/haptics";
 import {
   apiCreateSlot,
-  apiListSlots,
-  getCachedSlots,
   apiUpdateSlot,
   apiDeleteSlot,
   apiGetActivitySuggestions,
-  apiListContacts,
+  apiGetWhoWithCandidates,
+  type WhoWithCandidates,
   type ActivitySuggestion,
   type ActivitySuggestions,
   type Slot,
   type SlotActivity,
   type WhoWithEntry,
+  type WhoWithRef,
 } from "@/lib/api/slots";
-import { apiGetMyGroups, apiGetMyEmptyGroups } from "@/lib/api";
-import { buildGroups } from "@/lib/groupUtils";
 import { apiAddActivityBlacklist } from "@/lib/api/users";
 import {
   SLOT_SHEET_OPEN_EVENT,
@@ -83,10 +84,10 @@ import type { DayTimeWindow } from "@/lib/types";
 interface EditableEntry {
   minPeople: number;
   maxPeople: number;
-  groups: string[];
-  people: string[];
-  excludeGroups: string[];
-  excludePeople: string[];
+  groups: WhoWithRef[];
+  people: WhoWithRef[];
+  excludeGroups: WhoWithRef[];
+  excludePeople: WhoWithRef[];
 }
 
 /** "Me" and "+3" — what a fresh activity starts at. */
@@ -139,8 +140,8 @@ function entryFromActivity(a: SlotActivity): EditableEntry {
 
 /** The condition → the wire shape (always one entry: the range is always set). */
 function entryToWire(e: EditableEntry): WhoWithEntry[] {
-  const list = (names: string[]) => {
-    const kept = names.filter(Boolean);
+  const list = (refs: WhoWithRef[]) => {
+    const kept = refs.filter((r) => r.name.trim());
     return kept.length > 0 ? kept : null;
   };
   return [
@@ -162,39 +163,13 @@ const nameKey = (s: string) => s.trim().toLowerCase();
 const excludeField = (kind: Candidate["kind"]) =>
   kind === "groups" ? ("excludeGroups" as const) : ("excludePeople" as const);
 
-/** An entry's name arrays → pills (groups first, then people). Names seeded
- *  but no longer in the source lists still show, and stay removable. */
-function toCandidates(groups: string[], people: string[]): Candidate[] {
+/** An entry's ref arrays → pills (groups first, then people). Refs seeded but
+ *  no longer in the candidate list still show, and stay removable. */
+function toCandidates(groups: WhoWithRef[], people: WhoWithRef[]): Candidate[] {
   return [
-    ...groups.map((name) => ({ kind: "groups" as const, name })),
-    ...people.map((name) => ({ kind: "people" as const, name })),
+    ...groups.map((r) => ({ kind: "groups" as const, id: r.id, name: r.name })),
+    ...people.map((r) => ({ kind: "people" as const, id: r.id, name: r.name })),
   ];
-}
-
-/** "Last time the caller referenced this candidate in a who-with" → ms, keyed
- *  by candidateKey. Derived from the caller's OWN saved slots (so it follows
- *  the account across devices without a new endpoint); a candidate they've
- *  never picked is simply absent. Slot created_at is the timestamp — the
- *  closest thing we store to "when this pick was made". */
-function whoWithRecencyFromSlots(slots: Slot[]): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const slot of slots) {
-    const ts = slot.created_at ? Date.parse(slot.created_at) : NaN;
-    if (Number.isNaN(ts)) continue;
-    for (const activity of slot.activities ?? []) {
-      for (const entry of activity.who_with ?? []) {
-        const bump = (kind: Candidate["kind"], names: string[] | null | undefined) => {
-          for (const name of names ?? []) {
-            const key = candidateKey({ kind, name });
-            if ((out.get(key) ?? -Infinity) < ts) out.set(key, ts);
-          }
-        };
-        bump("groups", entry.groups);
-        bump("people", entry.people);
-      }
-    }
-  }
-  return out;
 }
 
 // Faded placeholder glyph on the emoji chip / in the picker input when no
@@ -406,70 +381,34 @@ export default function NewSlotSheet() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, showActivity, dtwKey]);
 
-  // Who-with picker sources: the caller's group names + contact names,
-  // fetched once per activity-mode open (null = loading). Names already on an
-  // entry but absent from these lists still render (checked) so seeded /
-  // stale selections stay toggleable.
-  const [availGroups, setAvailGroups] = useState<string[] | null>(null);
-  const [availPeople, setAvailPeople] = useState<string[] | null>(null);
+  // Who-with picker source: one server call giving every group the caller is
+  // in plus their address book, already ordered by how recently they last
+  // referenced each — the SAME population the server validates a save against,
+  // so nothing offered here can be dropped on the way in. Fetched per
+  // activity-mode open; null = loading.
+  const [candidates, setCandidates] = useState<WhoWithCandidates | null>(null);
   useEffect(() => {
     if (!isOpen || !showActivity) return;
     let cancelled = false;
-    Promise.all([apiGetMyGroups().catch(() => []), apiGetMyEmptyGroups().catch(() => [])])
-      .then(([polls, empty]) => {
-        if (cancelled) return;
-        const gs = buildGroups(polls, new Set(), new Set(), empty).filter((g) => g.groupId);
-        setAvailGroups([...new Set(gs.map((g) => g.title).filter((t): t is string => !!t))]);
+    apiGetWhoWithCandidates()
+      .then((c) => {
+        if (!cancelled) setCandidates(c);
       })
       .catch(() => {
-        if (!cancelled) setAvailGroups([]);
-      });
-    apiListContacts()
-      .then((cs) => {
-        if (cancelled) return;
-        setAvailPeople([...new Set(cs.map((c) => c.name).filter((n): n is string => !!n))]);
-      })
-      .catch(() => {
-        if (!cancelled) setAvailPeople([]);
+        if (!cancelled) setCandidates({ groups: [], people: [] });
       });
     return () => {
       cancelled = true;
     };
   }, [isOpen, showActivity]);
 
-  // How recently the caller last picked each candidate in a who-with. Seeded
-  // synchronously from the slot list the Playlist tab already loaded, then
-  // refreshed on open.
-  const [whoWithRecency, setWhoWithRecency] = useState<Map<string, number>>(() =>
-    whoWithRecencyFromSlots(getCachedSlots() ?? []),
-  );
-  useEffect(() => {
-    if (!isOpen || !showActivity) return;
-    let cancelled = false;
-    apiListSlots()
-      .then((slots) => {
-        if (!cancelled) setWhoWithRecency(whoWithRecencyFromSlots(slots));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, showActivity]);
-
-  // Every pickable candidate, ordered LEAST relevant first so the picker's
-  // bottom row (nearest its box) is the most-recently-referenced one. Names
-  // never picked before tie at the bottom of the ranking and fall back to
-  // their source order, reversed for the same reason.
+  // CandidatePicker wants LEAST relevant first (its list grows upward from the
+  // search box), so the server's most-relevant-first order is reversed once.
   const candidateOptions = useMemo<Candidate[]>(() => {
-    const all: Candidate[] = [
-      ...(availGroups ?? []).map((name) => ({ kind: "groups" as const, name })),
-      ...(availPeople ?? []).map((name) => ({ kind: "people" as const, name })),
-    ];
-    return all
-      .map((c, i) => ({ c, i, r: whoWithRecency.get(candidateKey(c)) ?? 0 }))
-      .sort((a, b) => a.r - b.r || b.i - a.i)
-      .map((x) => x.c);
-  }, [availGroups, availPeople, whoWithRecency]);
+    const groups = (candidates?.groups ?? []).map((r) => ({ kind: "groups" as const, ...r }));
+    const people = (candidates?.people ?? []).map((r) => ({ kind: "people" as const, ...r }));
+    return [...groups, ...people].reverse();
+  }, [candidates]);
 
   const withSelected = useMemo(
     () => toCandidates(draft.entry.groups, draft.entry.people),
@@ -513,11 +452,17 @@ export default function NewSlotSheet() {
       entry: { ...prev.entry, maxPeople: n, minPeople: Math.min(prev.entry.minPeople, n) },
     }));
   }, []);
-  const toggleEntryName = useCallback(
-    (field: "groups" | "people" | "excludeGroups" | "excludePeople", name: string) => {
+  // Toggling is keyed on the candidate KEY (identity, else name) so two
+  // same-named contacts stay distinct and a rename can't orphan a pick.
+  const toggleEntryRef = useCallback(
+    (field: "groups" | "people" | "excludeGroups" | "excludePeople", c: Candidate) => {
       setDraft((prev) => {
         const list = prev.entry[field];
-        const next = list.includes(name) ? list.filter((n) => n !== name) : [...list, name];
+        const key = candidateKey(c);
+        const has = list.some((r) => candidateKey({ kind: c.kind, ...r }) === key);
+        const next = has
+          ? list.filter((r) => candidateKey({ kind: c.kind, ...r }) !== key)
+          : [...list, { id: c.id, name: c.name }];
         return { ...prev, entry: { ...prev.entry, [field]: next } };
       });
     },
@@ -990,8 +935,8 @@ export default function NewSlotSheet() {
                 emptyValue="Anyone"
                 selected={withSelected}
                 options={candidateOptions}
-                onAdd={(c) => toggleEntryName(c.kind, c.name)}
-                onRemove={(c) => toggleEntryName(c.kind, c.name)}
+                onAdd={(c) => toggleEntryRef(c.kind, c)}
+                onRemove={(c) => toggleEntryRef(c.kind, c)}
               />
               <PartyCountField label="At Least" value={draft.entry.minPeople} setValue={setMinPeople} />
               <PartyCountField
@@ -1005,8 +950,8 @@ export default function NewSlotSheet() {
                 emptyValue="No one"
                 selected={withoutSelected}
                 options={candidateOptions}
-                onAdd={(c) => toggleEntryName(excludeField(c.kind), c.name)}
-                onRemove={(c) => toggleEntryName(excludeField(c.kind), c.name)}
+                onAdd={(c) => toggleEntryRef(excludeField(c.kind), c)}
+                onRemove={(c) => toggleEntryRef(excludeField(c.kind), c)}
               />
             </section>
             )}

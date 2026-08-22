@@ -1,11 +1,16 @@
 """Playlist slots (migration 148): create round-trip, the 3-group activity
-suggestion ranking (overlap / yours / others, no cross-group dupes), and the
-account-synced blacklist filtering + editing."""
+suggestion ranking (overlap / yours / others, no cross-group dupes), the
+account-synced blacklist filtering + editing, and the per-activity "who with"
+condition (reference shape, identity resolution, and the picker's
+candidates)."""
 
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from tests.conftest import bid_headers
+import psycopg
+
+from services.auth import generate_token, hash_token, normalize_email
+from tests.conftest import TEST_DB_URL, bid_headers
 
 
 def _day(offset: int) -> str:
@@ -37,6 +42,23 @@ def _suggestions(client, *, browser_id, day_time_windows):
 
 def _list_slots(client, *, browser_id):
     return client.get("/api/slots", headers=bid_headers(browser_id))
+
+
+def _candidates(client, *, browser_id):
+    return client.get("/api/slots/who-with-candidates", headers=bid_headers(browser_id))
+
+
+def _ref(name: str, id_: str | None = None) -> dict:
+    return {"id": id_, "name": name}
+
+
+def _entry(min_people, max_people, **lists) -> dict:
+    """A who-with entry as the API returns it — every list key present, absent
+    ones null."""
+    out = {"min_people": min_people, "max_people": max_people}
+    for k in ("groups", "people", "exclude_groups", "exclude_people"):
+        out[k] = lists.get(k)
+    return out
 
 
 def test_create_slot_round_trip(client):
@@ -199,8 +221,10 @@ def test_activity_who_with_round_trips(client):
             {
                 "name": "Hiking",
                 "who_with": [
+                    # Bare strings are still accepted (older clients / raw API)
+                    # and land as name-only refs.
                     {"min_people": 2, "max_people": 5, "groups": ["Climbing Crew"]},
-                    {"min_people": 2, "max_people": 3, "people": ["Alex"]},
+                    {"min_people": 2, "max_people": 3, "people": [{"name": "Alex"}]},
                 ],
             },
             {"name": "Coffee"},  # no entries → null
@@ -210,8 +234,8 @@ def test_activity_who_with_round_trips(client):
     by_name = {a["name"]: a for a in s["activities"]}
     ww = by_name["Hiking"]["who_with"]
     assert len(ww) == 2
-    assert ww[0] == {"min_people": 2, "max_people": 5, "groups": ["Climbing Crew"], "people": None}
-    assert ww[1] == {"min_people": 2, "max_people": 3, "groups": None, "people": ["Alex"]}
+    assert ww[0] == _entry(2, 5, groups=[_ref("Climbing Crew")])
+    assert ww[1] == _entry(2, 3, people=[_ref("Alex")])
     assert by_name["Coffee"]["who_with"] is None
 
 
@@ -227,6 +251,9 @@ def test_activity_who_with_sanitized(client):
                 "who_with": [
                     # min > max bumps max up; blank names dropped.
                     {"min_people": 6, "max_people": 2, "people": ["  Priya  ", "   "]},
+                    # An id the caller can't reach is NULLED, not dropped —
+                    # the pick survives as a name-only condition.
+                    {"exclude_groups": [{"id": str(uuid.uuid4()), "name": "Randos"}]},
                     # Entirely empty entry → dropped.
                     {"groups": [], "people": []},
                 ],
@@ -238,8 +265,9 @@ def test_activity_who_with_sanitized(client):
     s = _list_slots(client, browser_id=bid).json()["slots"][0]
     by_name = {a["name"]: a for a in s["activities"]}
     ww = by_name["Games"]["who_with"]
-    assert len(ww) == 1
-    assert ww[0] == {"min_people": 6, "max_people": 6, "groups": None, "people": ["Priya"]}
+    assert len(ww) == 2
+    assert ww[0] == _entry(6, 6, people=[_ref("Priya")])
+    assert ww[1] == _entry(None, None, exclude_groups=[_ref("Randos")])
     assert by_name["Chess"]["who_with"] is None
 
 
@@ -262,8 +290,169 @@ def test_update_slot_preserves_who_with_when_resent(client):
     assert r.status_code == 200
     s2 = _list_slots(client, browser_id=bid).json()["slots"][0]
     assert s2["day_time_windows"][0]["day"] == _day(2)
-    assert s2["activities"][0]["who_with"] == [
-        {"min_people": 2, "max_people": None, "groups": ["Crew"], "people": None}
+    assert s2["activities"][0]["who_with"] == [_entry(2, None, groups=[_ref("Crew")])]
+
+
+def test_who_with_candidates_empty_for_new_browser(client):
+    r = _candidates(client, browser_id=str(uuid.uuid4()))
+    assert r.status_code == 200, r.text
+    assert r.json() == {"groups": [], "people": []}
+
+
+def test_who_with_candidates_lists_the_callers_groups(client):
+    """A group the caller is a member of is pickable, keyed on its real id. A
+    brand-new group has no title and no participants, so it reads as the same
+    "New Group" the FE shows for it."""
+    bid = str(uuid.uuid4())
+    group_id = client.post("/api/groups", headers=bid_headers(bid)).json()["id"]
+    groups = _candidates(client, browser_id=bid).json()["groups"]
+    assert [g["id"] for g in groups] == [group_id]
+    assert groups[0]["name"] == "New Group"
+
+
+def test_who_with_candidates_rank_recently_picked_first(client):
+    """The picker's order is "what you reached for last", so a group used in a
+    who-with outranks one that has never been picked."""
+    bid = str(uuid.uuid4())
+    older = client.post("/api/groups", headers=bid_headers(bid)).json()["id"]
+    newer = client.post("/api/groups", headers=bid_headers(bid)).json()["id"]
+    # Name them so the alphabetical fallback would put "A…" first — the
+    # recency sort has to override that to prove it is doing the work.
+    for gid, title in ((older, "Aardvarks"), (newer, "Zebras")):
+        client.post(f"/api/groups/{gid}/title", json={"group_title": title}, headers=bid_headers(bid))
+    assert [g["name"] for g in _candidates(client, browser_id=bid).json()["groups"]] == [
+        "Aardvarks",
+        "Zebras",
+    ]
+    _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw(_day(1)),
+        activities=[{"name": "Hiking", "who_with": [{"groups": [{"id": newer, "name": "Zebras"}]}]}],
+    )
+    assert [g["name"] for g in _candidates(client, browser_id=bid).json()["groups"]] == [
+        "Zebras",
+        "Aardvarks",
+    ]
+
+
+def test_who_with_group_id_resolves_and_refreshes_its_name(client):
+    """A real membership keeps its id, and the stored display name is refreshed
+    from the group so a rename doesn't leave the pick reading stale."""
+    bid = str(uuid.uuid4())
+    group_id = client.post("/api/groups", headers=bid_headers(bid)).json()["id"]
+    client.post(f"/api/groups/{group_id}/title", json={"group_title": "Climbing Crew"}, headers=bid_headers(bid))
+    _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw(_day(1)),
+        # Deliberately stale name on the way in.
+        activities=[{"name": "Hiking", "who_with": [{"groups": [{"id": group_id, "name": "Old Name"}]}]}],
+    )
+    s = _list_slots(client, browser_id=bid).json()["slots"][0]
+    assert s["activities"][0]["who_with"] == [
+        _entry(None, None, groups=[_ref("Climbing Crew", group_id)])
+    ]
+
+
+def test_who_with_group_id_of_a_group_youre_not_in_is_nulled(client):
+    """Someone else's group id can't be laundered into a who-with by guessing
+    it — the id is dropped, though the typed name survives."""
+    owner, outsider = str(uuid.uuid4()), str(uuid.uuid4())
+    group_id = client.post("/api/groups", headers=bid_headers(owner)).json()["id"]
+    _create_slot(
+        client,
+        browser_id=outsider,
+        day_time_windows=_dtw(_day(1)),
+        activities=[{"name": "Hiking", "who_with": [{"groups": [{"id": group_id, "name": "Theirs"}]}]}],
+    )
+    s = _list_slots(client, browser_id=outsider).json()["slots"][0]
+    assert s["activities"][0]["who_with"] == [_entry(None, None, groups=[_ref("Theirs")])]
+
+
+def _sign_in(client, browser_id, name):
+    """Magic-link verify → a signed-in account with a display name, so it can
+    surface as somebody else's contact. Mirrors test_invite_members' helper;
+    the who-with people list only ever holds NAMED accounts."""
+    email = f"whowith-{uuid.uuid4().hex[:8]}@example.com"
+    token = generate_token()
+    with psycopg.connect(TEST_DB_URL) as conn:
+        conn.execute(
+            """
+            INSERT INTO magic_link_tokens (token_hash, email, browser_id, expires_at)
+            VALUES (%s, %s, %s, NOW() + INTERVAL '15 minutes')
+            """,
+            (hash_token(token), normalize_email(email), browser_id),
+        )
+        conn.commit()
+    r = client.post("/api/auth/magic-link/verify", json={"token": token}, headers=bid_headers(browser_id))
+    assert r.status_code == 200, r.text
+    uid = r.json()["user"]["user_id"]
+    with psycopg.connect(TEST_DB_URL) as conn:
+        conn.execute("UPDATE users SET display_name = %s WHERE id = %s::uuid", (name, uid))
+        conn.commit()
+    return uid
+
+
+def _share_a_group(client, a_browser, b_browser):
+    """Put two browsers in one group so each becomes the other's contact."""
+    gid = client.post("/api/groups", headers=bid_headers(a_browser)).json()["id"]
+    with psycopg.connect(TEST_DB_URL) as conn:
+        conn.execute(
+            "INSERT INTO group_members (group_id, browser_id) VALUES (%s::uuid, %s::uuid)"
+            " ON CONFLICT DO NOTHING",
+            (gid, b_browser),
+        )
+        conn.commit()
+    return gid
+
+
+def test_who_with_candidates_list_contacts(client):
+    """People come from the caller's address book — the same population the
+    invite-members picker uses — and the endpoint reconciles inline, so someone
+    they only just started sharing a group with is immediately pickable."""
+    me, them = str(uuid.uuid4()), str(uuid.uuid4())
+    _sign_in(client, me, "Me")
+    _sign_in(client, them, "Priya")
+    _share_a_group(client, me, them)
+    people = _candidates(client, browser_id=me).json()["people"]
+    assert [p["name"] for p in people] == ["Priya"]
+    assert people[0]["id"]
+
+
+def test_who_with_person_id_resolves_only_for_a_contact(client):
+    """A contact's id sticks (and their name refreshes from the account); a
+    stranger's id is nulled down to a name-only pick."""
+    me, them, stranger = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    _sign_in(client, me, "Me")
+    them_uid = _sign_in(client, them, "Priya")
+    stranger_uid = _sign_in(client, stranger, "Nobody")
+    _share_a_group(client, me, them)
+    _candidates(client, browser_id=me)  # reconcile the address book
+
+    _create_slot(
+        client,
+        browser_id=me,
+        day_time_windows=_dtw(_day(1)),
+        activities=[
+            {
+                "name": "Hiking",
+                "who_with": [
+                    {
+                        "people": [{"id": them_uid, "name": "stale"}],
+                        "exclude_people": [{"id": stranger_uid, "name": "Nobody"}],
+                    }
+                ],
+            }
+        ],
+    )
+    s = _list_slots(client, browser_id=me).json()["slots"][0]
+    assert s["activities"][0]["who_with"] == [
+        _entry(
+            None, None,
+            people=[_ref("Priya", them_uid)],
+            exclude_people=[_ref("Nobody")],
+        )
     ]
 
 

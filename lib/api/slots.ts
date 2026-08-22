@@ -21,16 +21,26 @@ export interface ActivitySuggestion {
  *  (min/max people, "2–5"). Only saved activities carry the range; the
  *  suggestion endpoint returns bare {name, emoji}. Mirrors the server's
  *  separate ActivityInput / SlotActivity models. */
+/** One group or person a who-with points at. `id` is the real identity (a
+ *  group id / account id) and `name` the display snapshot taken when it was
+ *  picked, so it still renders after a rename or a deleted account. `id` is
+ *  null for a name-only reference — the server nulls any id that doesn't
+ *  resolve to a group the owner is in or a person in their address book. */
+export interface WhoWithRef {
+  id: string | null;
+  name: string;
+}
+
 /** One "who with" entry on an activity: a participant range with its own set
- *  of groups and/or specific people (display names). */
+ *  of groups and/or specific people. */
 export interface WhoWithEntry {
   min_people?: number | null;
   max_people?: number | null;
-  groups?: string[] | null;
-  people?: string[] | null;
+  groups?: WhoWithRef[] | null;
+  people?: WhoWithRef[] | null;
   /** Groups / people the owner would NOT do this activity with. */
-  exclude_groups?: string[] | null;
-  exclude_people?: string[] | null;
+  exclude_groups?: WhoWithRef[] | null;
+  exclude_people?: WhoWithRef[] | null;
 }
 
 export interface SlotActivity extends ActivitySuggestion {
@@ -111,20 +121,19 @@ export async function apiDeleteSlot(slotId: string): Promise<void> {
   await slotFetch<void>(`/${slotId}`, { method: "DELETE" });
 }
 
-/** A pickable person for the slot form's "Who With → Pick" list: an account
- *  the caller has shared a group with (their contacts address book). Same
- *  shape as the group invite-members candidate, without a group scope. */
-export interface Contact {
-  user_id: string;
-  name: string | null;
-  shared_group_count: number;
-  last_seen_at: string;
+/** Everything an activity's "who with" can point at: the caller's groups and
+ *  their address book, in the same {id, name} shape a saved who-with stores. */
+export interface WhoWithCandidates {
+  groups: WhoWithRef[];
+  people: WhoWithRef[];
 }
 
-/** The caller's contacts (people they've shared any group with), newest-shared
- *  first. Empty for a fresh anonymous browser with no account yet. */
-export async function apiListContacts(): Promise<Contact[]> {
-  return slotFetch<Contact[]>("/contacts", { method: "GET" });
+/** The who-with picker's single source. Ordered most-recently-referenced first
+ *  (by the caller's own past picks), then alphabetically. Deliberately the same
+ *  population the server validates saves against, so anything offered here can
+ *  actually be saved. Empty for a fresh anonymous browser with no account yet. */
+export async function apiGetWhoWithCandidates(): Promise<WhoWithCandidates> {
+  return slotFetch<WhoWithCandidates>("/who-with-candidates", { method: "GET" });
 }
 
 export async function apiGetActivitySuggestions(
