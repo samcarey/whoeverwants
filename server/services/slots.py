@@ -511,33 +511,37 @@ def _who_with_recency(conn, user_id: str) -> tuple[dict[str, str], dict[str, str
     return groups, people
 
 
-def who_with_candidates(conn, *, user_id: str | None) -> dict:
-    """Everything the account can point a who-with at:
-    ``{"groups": [{id, name}], "people": [{id, name}]}``.
+def who_with_candidates(conn, *, user_id: str | None) -> list[dict]:
+    """Everything the account can point a who-with at, as ONE ranked list of
+    ``{"kind": "groups" | "people", "id", "name"}``. `kind` names the who-with
+    field the pick belongs in, so the picker can render it without a second
+    lookup.
 
     Groups = the account's memberships; people = its contacts address book —
     the SAME populations `_resolve_who_with` validates saves against, so the
     picker can never offer something that would then be nulled on save.
 
-    Ordered MOST-RECENTLY-REFERENCED first (by the caller's own past who-with
-    picks), then alphabetically for everything they've never picked. No account
-    yet (fresh anonymous browser) → both lists empty."""
+    ONE list rather than two because the ranking is global: whatever the caller
+    reached for most recently comes first, whether that's a group or a person.
+    Splitting by kind would make every group outrank every person. Groups only
+    lead among entries that tie — i.e. everything never picked, which then
+    sorts alphabetically. No account yet (fresh anonymous browser) → empty."""
     if not user_id:
-        return {"groups": [], "people": []}
-    group_names = _member_group_names(conn, user_id)
-    people_names = _contact_names(conn, user_id)
+        return []
     group_seen, people_seen = _who_with_recency(conn, user_id)
-
-    def ranked(names: dict[str, str], seen: dict[str, str]) -> list[dict]:
-        # Two passes so the two keys can run in OPPOSITE directions: name
-        # ascending, then a stable re-sort by recency descending. Never-picked
-        # entries share the "" stamp and so keep their alphabetical order at
-        # the bottom.
-        ordered = sorted(names.items(), key=lambda kv: kv[1].lower())
-        ordered.sort(key=lambda kv: seen.get(kv[0], ""), reverse=True)
-        return [{"id": cid, "name": name} for cid, name in ordered]
-
-    return {"groups": ranked(group_names, group_seen), "people": ranked(people_names, people_seen)}
+    rows = [
+        {"kind": kind, "id": cid, "name": name, "seen": seen.get(cid, ""), "rank": rank}
+        for kind, names, seen, rank in (
+            ("groups", _member_group_names(conn, user_id), group_seen, 0),
+            ("people", _contact_names(conn, user_id), people_seen, 1),
+        )
+        for cid, name in names.items()
+    ]
+    # Two passes so the keys can run in OPPOSITE directions: kind then name
+    # ascending, then a stable re-sort by recency descending.
+    rows.sort(key=lambda r: (r["rank"], r["name"].lower()))
+    rows.sort(key=lambda r: r["seen"], reverse=True)
+    return [{"kind": r["kind"], "id": r["id"], "name": r["name"]} for r in rows]
 
 
 # ----------------------------------------------------------------------------

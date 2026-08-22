@@ -10,6 +10,8 @@ picked before" suggestion group works across that browser's future slots.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
@@ -176,14 +178,22 @@ def list_slots_endpoint(request: Request):
     return SlotListResponse(slots=[SlotResponse(**s) for s in slots])
 
 
+class WhoWithCandidate(WhoWithRef):
+    """A pickable group or person, in the same {id, name} shape a saved
+    who-with stores, plus the who-with field it belongs in."""
+
+    kind: Literal["groups", "people"]
+
+
 class WhoWithCandidatesResponse(BaseModel):
     """Everything the caller can point an activity's "who with" at: the groups
-    they're a member of and the people in their address book, each as the same
-    {id, name} reference shape a saved who-with stores. Most-recently-referenced
-    first (by the caller's own past picks), then alphabetical."""
+    they're a member of and the people in their address book, in ONE list
+    ranked most-recently-referenced first (by the caller's own past picks) —
+    groups and people interleaved, since "what I reached for last" doesn't care
+    which kind it was. Never-picked entries tie and fall back to groups first,
+    then alphabetical."""
 
-    groups: list[WhoWithRef] = []
-    people: list[WhoWithRef] = []
+    candidates: list[WhoWithCandidate] = []
 
 
 @router.get("/who-with-candidates", response_model=WhoWithCandidatesResponse)
@@ -198,7 +208,7 @@ def who_with_candidates_endpoint(request: Request):
         if user_id:
             reconcile_contacts(conn, user_id)
         candidates = who_with_candidates(conn, user_id=user_id)
-    return WhoWithCandidatesResponse(**candidates)
+    return WhoWithCandidatesResponse(candidates=candidates)
 
 
 @router.put("/{slot_id}", response_model=CreateSlotResponse)

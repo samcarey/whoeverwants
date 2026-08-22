@@ -18,8 +18,7 @@
  *     red "Delete activity". The who-with card's With/Without pickers draw on
  *     `apiGetWhoWithCandidates` — the caller's groups + address book, ordered
  *     by how recently they last picked each — and store real ids, not names.
- *     Picking a suggestion fills the name + emoji and
- *     collapses the list. The add panel has NO ✓ — closing the keyboard (the
+ *     Picking a suggestion fills the name + emoji and collapses the list. The add panel has NO ✓ — closing the keyboard (the
  *     iOS Done) commits it. In BOTH, focusing the name field drops down its
  *     suggestions (others planning this period / your past picks / others'
  *     past picks), grouped + narrowed by what's typed. Activities already on
@@ -59,7 +58,7 @@ import {
   apiDeleteSlot,
   apiGetActivitySuggestions,
   apiGetWhoWithCandidates,
-  type WhoWithCandidates,
+  type WhoWithCandidate,
   type ActivitySuggestion,
   type ActivitySuggestions,
   type Slot,
@@ -386,7 +385,7 @@ export default function NewSlotSheet() {
   // referenced each — the SAME population the server validates a save against,
   // so nothing offered here can be dropped on the way in. Fetched per
   // activity-mode open; null = loading.
-  const [candidates, setCandidates] = useState<WhoWithCandidates | null>(null);
+  const [candidates, setCandidates] = useState<WhoWithCandidate[]>([]);
   useEffect(() => {
     if (!isOpen || !showActivity) return;
     let cancelled = false;
@@ -395,20 +394,19 @@ export default function NewSlotSheet() {
         if (!cancelled) setCandidates(c);
       })
       .catch(() => {
-        if (!cancelled) setCandidates({ groups: [], people: [] });
+        if (!cancelled) setCandidates([]);
       });
     return () => {
       cancelled = true;
     };
   }, [isOpen, showActivity]);
 
-  // CandidatePicker wants LEAST relevant first (its list grows upward from the
-  // search box), so the server's most-relevant-first order is reversed once.
-  const candidateOptions = useMemo<Candidate[]>(() => {
-    const groups = (candidates?.groups ?? []).map((r) => ({ kind: "groups" as const, ...r }));
-    const people = (candidates?.people ?? []).map((r) => ({ kind: "people" as const, ...r }));
-    return [...groups, ...people].reverse();
-  }, [candidates]);
+  // CandidatePicker takes its options LEAST relevant first, so the server's
+  // most-relevant-first ranking is reversed once here.
+  const candidateOptions = useMemo<Candidate[]>(
+    () => [...candidates].reverse(),
+    [candidates],
+  );
 
   const withSelected = useMemo(
     () => toCandidates(draft.entry.groups, draft.entry.people),

@@ -121,19 +121,23 @@ export async function apiDeleteSlot(slotId: string): Promise<void> {
   await slotFetch<void>(`/${slotId}`, { method: "DELETE" });
 }
 
-/** Everything an activity's "who with" can point at: the caller's groups and
- *  their address book, in the same {id, name} shape a saved who-with stores. */
-export interface WhoWithCandidates {
-  groups: WhoWithRef[];
-  people: WhoWithRef[];
+/** A pickable group or person for an activity's "who with": the same {id, name}
+ *  a saved who-with stores, plus the who-with field the pick belongs in. */
+export interface WhoWithCandidate extends WhoWithRef {
+  kind: "groups" | "people";
 }
 
-/** The who-with picker's single source. Ordered most-recently-referenced first
- *  (by the caller's own past picks), then alphabetically. Deliberately the same
- *  population the server validates saves against, so anything offered here can
- *  actually be saved. Empty for a fresh anonymous browser with no account yet. */
-export async function apiGetWhoWithCandidates(): Promise<WhoWithCandidates> {
-  return slotFetch<WhoWithCandidates>("/who-with-candidates", { method: "GET" });
+/** The who-with picker's single source: the caller's groups and their address
+ *  book in ONE list, most-recently-referenced first (by their own past picks)
+ *  with groups and people interleaved — what you reached for last doesn't care
+ *  which kind it was. Deliberately the same population the server validates
+ *  saves against, so anything offered here can actually be saved. Empty for a
+ *  fresh anonymous browser with no account yet. */
+export async function apiGetWhoWithCandidates(): Promise<WhoWithCandidate[]> {
+  const res = await slotFetch<{ candidates: WhoWithCandidate[] }>("/who-with-candidates", {
+    method: "GET",
+  });
+  return res.candidates ?? [];
 }
 
 export async function apiGetActivitySuggestions(

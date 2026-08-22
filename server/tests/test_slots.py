@@ -44,8 +44,11 @@ def _list_slots(client, *, browser_id):
     return client.get("/api/slots", headers=bid_headers(browser_id))
 
 
-def _candidates(client, *, browser_id):
-    return client.get("/api/slots/who-with-candidates", headers=bid_headers(browser_id))
+def _candidates(client, *, browser_id, kind=None):
+    r = client.get("/api/slots/who-with-candidates", headers=bid_headers(browser_id))
+    assert r.status_code == 200, r.text
+    rows = r.json()["candidates"]
+    return [c for c in rows if kind is None or c["kind"] == kind]
 
 
 def _ref(name: str, id_: str | None = None) -> dict:
@@ -294,9 +297,7 @@ def test_update_slot_preserves_who_with_when_resent(client):
 
 
 def test_who_with_candidates_empty_for_new_browser(client):
-    r = _candidates(client, browser_id=str(uuid.uuid4()))
-    assert r.status_code == 200, r.text
-    assert r.json() == {"groups": [], "people": []}
+    assert _candidates(client, browser_id=str(uuid.uuid4())) == []
 
 
 def test_who_with_candidates_lists_the_callers_groups(client):
@@ -305,7 +306,7 @@ def test_who_with_candidates_lists_the_callers_groups(client):
     "New Group" the FE shows for it."""
     bid = str(uuid.uuid4())
     group_id = client.post("/api/groups", headers=bid_headers(bid)).json()["id"]
-    groups = _candidates(client, browser_id=bid).json()["groups"]
+    groups = _candidates(client, browser_id=bid, kind="groups")
     assert [g["id"] for g in groups] == [group_id]
     assert groups[0]["name"] == "New Group"
 
@@ -320,7 +321,7 @@ def test_who_with_candidates_rank_recently_picked_first(client):
     # recency sort has to override that to prove it is doing the work.
     for gid, title in ((older, "Aardvarks"), (newer, "Zebras")):
         client.post(f"/api/groups/{gid}/title", json={"group_title": title}, headers=bid_headers(bid))
-    assert [g["name"] for g in _candidates(client, browser_id=bid).json()["groups"]] == [
+    assert [g["name"] for g in _candidates(client, browser_id=bid, kind="groups")] == [
         "Aardvarks",
         "Zebras",
     ]
@@ -330,7 +331,7 @@ def test_who_with_candidates_rank_recently_picked_first(client):
         day_time_windows=_dtw(_day(1)),
         activities=[{"name": "Hiking", "who_with": [{"groups": [{"id": newer, "name": "Zebras"}]}]}],
     )
-    assert [g["name"] for g in _candidates(client, browser_id=bid).json()["groups"]] == [
+    assert [g["name"] for g in _candidates(client, browser_id=bid, kind="groups")] == [
         "Zebras",
         "Aardvarks",
     ]
@@ -415,9 +416,29 @@ def test_who_with_candidates_list_contacts(client):
     _sign_in(client, me, "Me")
     _sign_in(client, them, "Priya")
     _share_a_group(client, me, them)
-    people = _candidates(client, browser_id=me).json()["people"]
+    people = _candidates(client, browser_id=me, kind="people")
     assert [p["name"] for p in people] == ["Priya"]
     assert people[0]["id"]
+
+
+def test_who_with_candidates_rank_across_groups_and_people(client):
+    """The ranking is GLOBAL, not per kind: a person picked recently outranks
+    a group that never was. Splitting the list by kind would make every group
+    beat every person, which is not what "what I reached for last" means."""
+    me, them = str(uuid.uuid4()), str(uuid.uuid4())
+    _sign_in(client, me, "Me")
+    them_uid = _sign_in(client, them, "Priya")
+    _share_a_group(client, me, them)
+    # Groups lead while nothing has been picked (everything ties).
+    assert [c["kind"] for c in _candidates(client, browser_id=me)] == ["groups", "people"]
+
+    _create_slot(
+        client,
+        browser_id=me,
+        day_time_windows=_dtw(_day(1)),
+        activities=[{"name": "Hiking", "who_with": [{"people": [{"id": them_uid, "name": "Priya"}]}]}],
+    )
+    assert [c["name"] for c in _candidates(client, browser_id=me)] == ["Priya", "New Group"]
 
 
 def test_who_with_person_id_resolves_only_for_a_contact(client):
