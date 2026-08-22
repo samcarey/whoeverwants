@@ -1,23 +1,21 @@
 "use client";
 
 /**
- * The who-with candidate field on a slot activity's entry card: the groups /
- * people already picked as removable pills, with a box to add more.
+ * One "who with" / "without" field inside the slot activity's settings card:
+ * a standard `h-12` label/value row (the create-poll card idiom) that expands
+ * on tap into a search box + suggestion list, with the picked groups/people
+ * shown as removable pills below the row.
  *
- * Tapping the box opens a FULL-SCREEN picker with the field pinned to the TOP
- * of the screen and the suggestions flowing DOWN from it — so the soft
- * keyboard (and its accessory bar) can only ever cover the tail of the list,
- * never the thing you're typing into. That's why this doesn't try to measure
- * the keyboard: an earlier visual-viewport-sized version put the box behind
- * the accessory bar on a real device.
+ * Expanding scrolls the row to the TOP of its scroller and puts the box right
+ * under it, so the suggestions — not the thing you're typing into — are what
+ * the soft keyboard can cover.
  *
- * Rows are ordered most-relevant FIRST here (nearest the box, which is above
- * them) — the caller supplies `options` least-relevant-first, and the overlay
- * reverses. Selection-only: typing filters, it never creates a new name.
+ * Suggestions are ordered most-relevant FIRST (nearest the box above them);
+ * the caller supplies `options` least-relevant-first and this reverses.
+ * Selection-only: typing filters, it never creates a new name.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import ModalPortal from "@/components/ModalPortal";
 import { useKeyboardPrimer } from "@/lib/useKeyboardPrimer";
 
 export interface Candidate {
@@ -43,10 +41,11 @@ function GroupGlyph({ className = "w-4 h-4 shrink-0" }: { className?: string }) 
   );
 }
 
-const BOX_CLASS =
-  "w-full rounded-full border border-gray-300 bg-white px-3 py-1.5 text-left text-sm dark:border-gray-600 dark:bg-gray-900";
-
 interface CandidatePickerProps {
+  /** Row label ("With" / "Without"). */
+  label: string;
+  /** Right-side value while nothing is picked ("Anyone" / "No one"). */
+  emptyValue: string;
   /** Already picked, rendered as pills (each with an ✕). */
   selected: Candidate[];
   /** Everything pickable, ordered LEAST relevant first (most relevant last). */
@@ -55,9 +54,17 @@ interface CandidatePickerProps {
   onRemove: (c: Candidate) => void;
 }
 
-export default function CandidatePicker({ selected, options, onAdd, onRemove }: CandidatePickerProps) {
+export default function CandidatePicker({
+  label,
+  emptyValue,
+  selected,
+  options,
+  onAdd,
+  onRemove,
+}: CandidatePickerProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const { prime, focusOnMount, cancel } = useKeyboardPrimer();
 
@@ -71,23 +78,24 @@ export default function CandidatePicker({ selected, options, onAdd, onRemove }: 
       .reverse();
   }, [options, selectedKeys, query]);
 
+  // Bring the field to the top of the sheet's scroller so the list below it
+  // has the most room before the keyboard starts covering things.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    const raf = requestAnimationFrame(() =>
+      rowRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }),
+    );
+    return () => cancelAnimationFrame(raf);
   }, [open]);
 
-  const openOverlay = () => {
+  const expand = () => {
     // Synchronous, inside the tap: claims the keyboard for the input that
     // mounts a commit later (see useKeyboardPrimer).
     prime();
     setQuery("");
     setOpen(true);
   };
-  const closeOverlay = () => {
+  const collapse = () => {
     cancel();
     setQuery("");
     setOpen(false);
@@ -98,105 +106,89 @@ export default function CandidatePicker({ selected, options, onAdd, onRemove }: 
     inputRef.current?.focus();
   };
 
-  const pill = (c: Candidate) => (
-    <span
-      key={candidateKey(c)}
-      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-500 bg-blue-100 py-1.5 pl-3 pr-1.5 text-sm text-blue-700 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-300"
-    >
-      {c.kind === "groups" && <GroupGlyph />}
-      <span className="truncate">{c.name}</span>
+  return (
+    <div ref={rowRef} className="py-1">
       <button
         type="button"
-        onClick={() => onRemove(c)}
-        aria-label={`Remove ${c.name}`}
-        className="shrink-0 rounded-full p-0.5 text-blue-500 hover:bg-blue-200/70 dark:text-blue-300 dark:hover:bg-blue-800/60"
+        onClick={open ? collapse : expand}
+        className="flex h-12 w-full items-center justify-between gap-3 text-left"
       >
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </span>
-  );
-
-  const placeholder = selected.length > 0 ? "Add another" : "Anyone — add a group or person";
-
-  return (
-    <div>
-      {selected.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{selected.map(pill)}</div>}
-      {/* A button, not an input: the real one lives in the overlay (the
-          documented trigger + primer pattern). */}
-      <button type="button" onClick={openOverlay} className={`${BOX_CLASS} text-gray-400 dark:text-gray-500`}>
-        {placeholder}
+        <span className="text-base">{label}</span>
+        <span className="truncate text-base text-gray-500 dark:text-gray-500">
+          {open ? "Select" : selected.length > 0 ? "" : emptyValue}
+        </span>
       </button>
 
-      {open && (
-        <ModalPortal>
-          <div
-            className="fixed inset-0 z-[85] flex flex-col bg-background"
-            style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Add a group or person"
-          >
-            {/* The field, pinned to the top of the screen: picked pills and
-                the caret share one wrapping row. */}
-            <div className="shrink-0 flex items-start gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-700">
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                {selected.map(pill)}
-                <input
-                  ref={(node) => {
-                    inputRef.current = node;
-                    focusOnMount(node);
-                  }}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    // Enter takes the top row — the most relevant match.
-                    if (e.key === "Enter" && rows.length > 0) {
-                      e.preventDefault();
-                      pick(rows[0]);
-                    }
-                  }}
-                  placeholder={placeholder}
-                  aria-label="Add a group or person"
-                  // text-base (16px) — anything smaller triggers iOS focus-zoom.
-                  className="min-w-[8rem] flex-1 bg-transparent py-1 text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                />
-              </div>
+      {selected.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {selected.map((c) => (
+            <span
+              key={candidateKey(c)}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-500 bg-blue-100 py-1.5 pl-3 pr-1.5 text-sm text-blue-700 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-300"
+            >
+              {c.kind === "groups" && <GroupGlyph />}
+              <span className="truncate">{c.name}</span>
               <button
                 type="button"
-                onClick={closeOverlay}
-                className="shrink-0 rounded-full px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30"
+                onClick={() => onRemove(c)}
+                aria-label={`Remove ${c.name}`}
+                className="shrink-0 rounded-full p-0.5 text-blue-500 hover:bg-blue-200/70 dark:text-blue-300 dark:hover:bg-blue-800/60"
               >
-                Done
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
-            </div>
+            </span>
+          ))}
+        </div>
+      )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              {rows.length === 0 ? (
-                <p className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">
-                  {options.length === 0
-                    ? "No groups or contacts to pick from yet."
-                    : "No matches."}
-                </p>
-              ) : (
-                rows.map((c) => (
-                  <button
-                    key={candidateKey(c)}
-                    type="button"
-                    // Commit before the input blurs.
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => pick(c)}
-                    className="flex w-full items-center gap-2 border-b border-gray-100 px-4 py-3 text-left text-base text-gray-700 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
-                  >
-                    {c.kind === "groups" && <GroupGlyph className="w-5 h-5 shrink-0" />}
-                    <span className="truncate">{c.name}</span>
-                  </button>
-                ))
-              )}
-            </div>
+      {open && (
+        <div className="mb-2">
+          <input
+            ref={(node) => {
+              inputRef.current = node;
+              focusOnMount(node);
+            }}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onBlur={collapse}
+            onKeyDown={(e) => {
+              // Enter takes the top row — the most relevant match.
+              if (e.key === "Enter" && rows.length > 0) {
+                e.preventDefault();
+                pick(rows[0]);
+              } else if (e.key === "Escape") {
+                collapse();
+              }
+            }}
+            placeholder="Search groups and people"
+            aria-label={`${label} — add a group or person`}
+            // text-base (16px) — anything smaller triggers iOS focus-zoom.
+            className="w-full rounded-full border border-gray-300 bg-white px-3 py-1.5 text-base outline-none placeholder:text-gray-400 dark:border-gray-600 dark:bg-gray-900 dark:placeholder:text-gray-500"
+          />
+          <div className="mt-2 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 dark:border-gray-700">
+            {rows.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                {options.length === 0 ? "No groups or contacts to pick from yet." : "No matches."}
+              </p>
+            ) : (
+              rows.map((c) => (
+                <button
+                  key={candidateKey(c)}
+                  type="button"
+                  // Commit before the input blurs (blur would collapse first).
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(c)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-base text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                >
+                  {c.kind === "groups" && <GroupGlyph />}
+                  <span className="truncate">{c.name}</span>
+                </button>
+              ))
+            )}
           </div>
-        </ModalPortal>
+        </div>
       )}
     </div>
   );

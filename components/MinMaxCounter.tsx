@@ -19,11 +19,6 @@ interface MinMaxCounterProps {
   minCheckboxEnabled?: boolean;
   onMinCheckboxChange?: (enabled: boolean) => void;
   suffix?: string;
-  /** Optional captions rendered above the counters — each centered over its
-   *  half of the row, faded when that bound is off/disabled. Omit both to
-   *  render the bare counter row (the Duration counter's shape). */
-  minLabel?: string;
-  maxLabel?: string;
 }
 
 export default function MinMaxCounter({
@@ -43,12 +38,9 @@ export default function MinMaxCounter({
   minCheckboxEnabled = false,
   onMinCheckboxChange,
   suffix,
-  minLabel,
-  maxLabel,
 }: MinMaxCounterProps) {
   // A bound is "off" when its checkbox is unchecked (the min checkbox is
-  // optional — without it the min is always on). Drives both the counter's
-  // fade and its caption's, so the two can't drift.
+  // optional — without it the min is always on).
   const minOff = onMinCheckboxChange !== undefined && !minCheckboxEnabled;
   const maxOff = !maxEnabled;
   const handleMinChange = (newMin: number | null) => {
@@ -93,16 +85,6 @@ export default function MinMaxCounter({
 
   return (
     <div>
-      {(minLabel || maxLabel) && (
-        <div className="flex text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-          <span className={`flex-1 text-center ${disabled || minOff ? "opacity-40" : ""}`}>
-            {minLabel}
-          </span>
-          <span className={`flex-1 text-center ${disabled || maxOff ? "opacity-40" : ""}`}>
-            {maxLabel}
-          </span>
-        </div>
-      )}
       <div className="relative flex justify-center items-center">
         {/* Min checkbox */}
         {onMinCheckboxChange && (

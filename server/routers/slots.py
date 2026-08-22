@@ -39,11 +39,14 @@ _NO_GROUP_ID = "00000000-0000-0000-0000-000000000000"
 class WhoWithEntry(BaseModel):
     # One "who with" entry: an optional participant range with its own set of
     # groups and/or specific people (display-name strings, sanitized + capped
-    # in services.slots).
+    # in services.slots), plus the exclude_* lists — groups/people the owner
+    # would NOT do the activity with.
     min_people: int | None = None
     max_people: int | None = None
     groups: list[str] | None = None
     people: list[str] | None = None
+    exclude_groups: list[str] | None = None
+    exclude_people: list[str] | None = None
 
 
 class ActivityInput(BaseModel):

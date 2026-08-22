@@ -28,6 +28,9 @@ export interface WhoWithEntry {
   max_people?: number | null;
   groups?: string[] | null;
   people?: string[] | null;
+  /** Groups / people the owner would NOT do this activity with. */
+  exclude_groups?: string[] | null;
+  exclude_people?: string[] | null;
 }
 
 export interface SlotActivity extends ActivitySuggestion {

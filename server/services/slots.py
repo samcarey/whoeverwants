@@ -119,9 +119,11 @@ def _clean_names(value) -> list[str] | None:
 
 def _clean_who_with(value) -> list[dict] | None:
     """Sanitize a per-activity "who with" entry list — each entry an optional
-    participant range plus its own groups/people name lists. Empty entries are
-    dropped; min > max bumps max up to min; list capped (silent truncation).
-    None/empty → None (= the activity-level range with "Anyone")."""
+    participant range plus its own groups/people name lists, and the
+    exclude_* lists (people/groups the owner would NOT do it with). Empty
+    entries are dropped; min > max bumps max up to min; list capped (silent
+    truncation). None/empty → None (= the activity-level range with
+    "Anyone")."""
     if not isinstance(value, list):
         return None
     out: list[dict] = []
@@ -134,9 +136,20 @@ def _clean_who_with(value) -> list[dict] | None:
             mx = mn
         groups = _clean_names(raw.get("groups"))
         people = _clean_names(raw.get("people"))
-        if mn is None and mx is None and not groups and not people:
+        ex_groups = _clean_names(raw.get("exclude_groups"))
+        ex_people = _clean_names(raw.get("exclude_people"))
+        if mn is None and mx is None and not groups and not people and not ex_groups and not ex_people:
             continue
-        out.append({"min_people": mn, "max_people": mx, "groups": groups, "people": people})
+        out.append(
+            {
+                "min_people": mn,
+                "max_people": mx,
+                "groups": groups,
+                "people": people,
+                "exclude_groups": ex_groups,
+                "exclude_people": ex_people,
+            }
+        )
         if len(out) >= MAX_WHO_WITH_ENTRIES:
             break
     return out or None

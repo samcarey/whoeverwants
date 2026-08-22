@@ -31,13 +31,13 @@
  * Self-manages its open + editing state.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DaysSelector from "@/components/DaysSelector";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import MinMaxCounter from "@/components/MinMaxCounter";
 import CandidatePicker, { candidateKey, type Candidate } from "@/components/CandidatePicker";
+import PartyCountField from "@/components/PartyCountField";
 import ModalPortal from "@/components/ModalPortal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
@@ -68,63 +68,99 @@ import {
 } from "@/lib/slotEvents";
 import type { DayTimeWindow } from "@/lib/types";
 
-/** One editable who-with entry on an activity: a participant range (null =
- *  unset bound) + the groups/people names selected for it. Empty names =
- *  "Anyone". */
+/** The activity's who-with condition: a party-size range (total head counts
+ *  including the owner — see PartyCountField) plus who it's with, and who it
+ *  is explicitly NOT with. Empty `groups`/`people` = "Anyone". */
 interface EditableEntry {
-  minPeople: number | null;
-  maxPeople: number | null;
+  minPeople: number;
+  maxPeople: number;
   groups: string[];
   people: string[];
+  excludeGroups: string[];
+  excludePeople: string[];
 }
 
+/** "Me" and "+3" — what a fresh activity starts at. */
+const DEFAULT_MIN_PEOPLE = 1;
+const DEFAULT_MAX_PEOPLE = 4;
+
+const EMPTY_ENTRY: EditableEntry = {
+  minPeople: DEFAULT_MIN_PEOPLE,
+  maxPeople: DEFAULT_MAX_PEOPLE,
+  groups: [],
+  people: [],
+  excludeGroups: [],
+  excludePeople: [],
+};
+
 /** The ONE activity the sheet is editing: its name, its chosen emoji ("" =
- *  none, picker faded) and its who-with entries (each a range with its own
- *  groups/people). The editor writes who_with exclusively — the legacy
- *  activity-level range converts into a single entry on load. */
+ *  none, picker faded) and its single who-with condition. The editor writes
+ *  who_with exclusively — the legacy activity-level range converts into the
+ *  condition's range on load. */
 interface ActivityDraft {
   name: string;
   emoji: string;
-  entries: EditableEntry[];
+  entry: EditableEntry;
 }
 
-const EMPTY_DRAFT: ActivityDraft = { name: "", emoji: "", entries: [] };
+const EMPTY_DRAFT: ActivityDraft = { name: "", emoji: "", entry: EMPTY_ENTRY };
 
-/** Seed the editable entries from a loaded activity: its who_with entries,
- *  else its legacy activity-level range as one "Anyone" entry. */
-function entriesFromActivity(a: SlotActivity): EditableEntry[] {
-  if (a.who_with && a.who_with.length > 0) {
-    return a.who_with.map((w) => ({
-      minPeople: w.min_people ?? null,
-      maxPeople: w.max_people ?? null,
+/** Seed the who-with condition from a loaded activity: its FIRST who_with
+ *  entry (the editor is single-condition now — a legacy activity with several
+ *  keeps only the first), else its legacy activity-level range, else the
+ *  defaults. */
+function entryFromActivity(a: SlotActivity): EditableEntry {
+  const w = a.who_with?.[0];
+  if (w) {
+    return {
+      minPeople: w.min_people ?? DEFAULT_MIN_PEOPLE,
+      maxPeople: w.max_people ?? DEFAULT_MAX_PEOPLE,
       groups: w.groups ?? [],
       people: w.people ?? [],
-    }));
+      excludeGroups: w.exclude_groups ?? [],
+      excludePeople: w.exclude_people ?? [],
+    };
   }
-  if (a.min_people != null || a.max_people != null) {
-    return [{ minPeople: a.min_people ?? null, maxPeople: a.max_people ?? null, groups: [], people: [] }];
-  }
-  return [];
+  return {
+    ...EMPTY_ENTRY,
+    minPeople: a.min_people ?? DEFAULT_MIN_PEOPLE,
+    maxPeople: a.max_people ?? DEFAULT_MAX_PEOPLE,
+  };
 }
 
-/** Editable entries → the wire shape, dropping empty entries. */
-function entriesToWire(entries: EditableEntry[]): WhoWithEntry[] | null {
-  const out: WhoWithEntry[] = [];
-  for (const e of entries) {
-    const groups = e.groups.filter(Boolean);
-    const people = e.people.filter(Boolean);
-    if (e.minPeople === null && e.maxPeople === null && groups.length === 0 && people.length === 0) continue;
-    out.push({
+/** The condition → the wire shape (always one entry: the range is always set). */
+function entryToWire(e: EditableEntry): WhoWithEntry[] {
+  const list = (names: string[]) => {
+    const kept = names.filter(Boolean);
+    return kept.length > 0 ? kept : null;
+  };
+  return [
+    {
       min_people: e.minPeople,
       max_people: e.maxPeople,
-      groups: groups.length > 0 ? groups : null,
-      people: people.length > 0 ? people : null,
-    });
-  }
-  return out.length > 0 ? out : null;
+      groups: list(e.groups),
+      people: list(e.people),
+      exclude_groups: list(e.excludeGroups),
+      exclude_people: list(e.excludePeople),
+    },
+  ];
 }
 
 const nameKey = (s: string) => s.trim().toLowerCase();
+
+/** The "Without" field writes the same candidate kinds into the exclude_*
+ *  lists, so its picks map onto the entry's other pair of name arrays. */
+const excludeField = (kind: Candidate["kind"]) =>
+  kind === "groups" ? ("excludeGroups" as const) : ("excludePeople" as const);
+
+/** An entry's name arrays → pills (groups first, then people). Names seeded
+ *  but no longer in the source lists still show, and stay removable. */
+function toCandidates(groups: string[], people: string[]): Candidate[] {
+  return [
+    ...groups.map((name) => ({ kind: "groups" as const, name })),
+    ...people.map((name) => ({ kind: "people" as const, name })),
+  ];
+}
 
 /** "Last time the caller referenced this candidate in a who-with" → ms, keyed
  *  by candidateKey. Derived from the caller's OWN saved slots (so it follows
@@ -166,10 +202,6 @@ const SUGGESTION_GROUPS: { key: keyof ActivitySuggestions; label: string }[] = [
 
 // Same top gap as the create-poll sheets (SHEET_TOP_GAP there).
 const SHEET_HEIGHT = "calc(100dvh - env(safe-area-inset-top, 0px) - 1.25rem)";
-
-// UI cap on the participants counter; the server clamps to the same bound in
-// services/slots.py (_clean_people). Keep in lockstep.
-const MAX_PEOPLE = 999;
 
 const monthOfToday = () => {
   const now = new Date();
@@ -278,7 +310,7 @@ export default function NewSlotSheet() {
       setActivityIndex(existing ? index : null);
       setDraft(
         existing
-          ? { name: existing.name, emoji: existing.emoji ?? "", entries: entriesFromActivity(existing) }
+          ? { name: existing.name, emoji: existing.emoji ?? "", entry: entryFromActivity(existing) }
           : EMPTY_DRAFT,
       );
       setEmojiOpen(false);
@@ -386,6 +418,15 @@ export default function NewSlotSheet() {
       .map((x) => x.c);
   }, [availGroups, availPeople, whoWithRecency]);
 
+  const withSelected = useMemo(
+    () => toCandidates(draft.entry.groups, draft.entry.people),
+    [draft.entry.groups, draft.entry.people],
+  );
+  const withoutSelected = useMemo(
+    () => toCandidates(draft.entry.excludeGroups, draft.entry.excludePeople),
+    [draft.entry.excludeGroups, draft.entry.excludePeople],
+  );
+
   // ---- Draft helpers --------------------------------------------------------
 
   const setName = useCallback((name: string) => {
@@ -404,32 +445,33 @@ export default function NewSlotSheet() {
     );
   }, []);
 
-  const patchEntry = useCallback((ei: number, patch: Partial<EditableEntry>) => {
+  const patchEntry = useCallback((patch: Partial<EditableEntry>) => {
+    setDraft((prev) => ({ ...prev, entry: { ...prev.entry, ...patch } }));
+  }, []);
+  // The two bounds stay ordered: raising the minimum pushes the maximum up,
+  // lowering the maximum pulls the minimum down.
+  const setMinPeople = useCallback((n: number) => {
     setDraft((prev) => ({
       ...prev,
-      entries: prev.entries.map((e, k) => (k === ei ? { ...e, ...patch } : e)),
+      entry: { ...prev.entry, minPeople: n, maxPeople: Math.max(prev.entry.maxPeople, n) },
     }));
   }, []);
-  const addEntry = useCallback(() => {
+  const setMaxPeople = useCallback((n: number) => {
     setDraft((prev) => ({
       ...prev,
-      entries: [...prev.entries, { minPeople: null, maxPeople: null, groups: [], people: [] }],
+      entry: { ...prev.entry, maxPeople: n, minPeople: Math.min(prev.entry.minPeople, n) },
     }));
   }, []);
-  const removeEntry = useCallback((ei: number) => {
-    setDraft((prev) => ({ ...prev, entries: prev.entries.filter((_, k) => k !== ei) }));
-  }, []);
-  const toggleEntryName = useCallback((ei: number, field: "groups" | "people", name: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      entries: prev.entries.map((e, k) => {
-        if (k !== ei) return e;
-        const list = e[field];
+  const toggleEntryName = useCallback(
+    (field: "groups" | "people" | "excludeGroups" | "excludePeople", name: string) => {
+      setDraft((prev) => {
+        const list = prev.entry[field];
         const next = list.includes(name) ? list.filter((n) => n !== name) : [...list, name];
-        return { ...e, [field]: next };
-      }),
-    }));
-  }, []);
+        return { ...prev, entry: { ...prev.entry, [field]: next } };
+      });
+    },
+    [],
+  );
 
   // Confirmed ✕ on a "you've picked before" suggestion: drop it from every
   // group immediately and add it to the account's blacklist so it's never
@@ -473,7 +515,7 @@ export default function NewSlotSheet() {
         emoji: draft.emoji.trim() || null,
         min_people: null,
         max_people: null,
-        who_with: entriesToWire(draft.entries),
+        who_with: entryToWire(draft.entry),
       };
       let base: SlotActivity[];
       if (activityIndex !== null) {
@@ -752,100 +794,36 @@ export default function NewSlotSheet() {
               />
             </section>
 
-            {/* Who With — one card per entry: the picked candidates (pills
-                with an ✕) + a search box to add more, over that entry's
-                participant range. Entries are alternatives, separated by an
-                "or". No entries = "Anyone, any number". The search offers the
-                caller's groups + contacts, most-recently-referenced nearest
-                the box. */}
-            <div>
-              <div className="flex items-center justify-between mb-1 px-1">
-                <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
-                  Who With
-                </label>
-                <button
-                  type="button"
-                  onClick={addEntry}
-                  aria-label="Add a who-with option"
-                  className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-blue-500 text-white hover:bg-blue-600 active:scale-95 transition"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                </button>
-              </div>
-              {draft.entries.length === 0 && (
-                <p className="px-1 text-sm text-gray-400 dark:text-gray-500">
-                  Anyone, any number of people. Add an option to set a
-                  participant range and who it applies to.
-                </p>
-              )}
-              <div className="space-y-[14.4px]">
-                {draft.entries.map((entry, k) => {
-                  // Pills are the entry's own picks (groups first, then
-                  // people) — anything seeded but no longer in the source
-                  // lists still shows, and stays removable.
-                  const selected: Candidate[] = [
-                    ...entry.groups.map((name) => ({ kind: "groups" as const, name })),
-                    ...entry.people.map((name) => ({ kind: "people" as const, name })),
-                  ];
-                  return (
-                    <Fragment key={k}>
-                    {/* Entries are alternatives, so they read as "this OR
-                        that" rather than a numbered list. */}
-                    {k > 0 && (
-                      <div className="text-center text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                        or
-                      </div>
-                    )}
-                    <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
-                      {/* No "Option N" heading — the entries read as a plain
-                          stack of cards; only the remove ✕ sits on this row. */}
-                      <div className="flex items-center justify-end">
-                        <button
-                          type="button"
-                          onClick={() => removeEntry(k)}
-                          aria-label={`Remove option ${k + 1}`}
-                          className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="mb-3">
-                        <CandidatePicker
-                          selected={selected}
-                          options={candidateOptions}
-                          onAdd={(c) => toggleEntryName(k, c.kind, c.name)}
-                          onRemove={(c) => toggleEntryName(k, c.kind, c.name)}
-                        />
-                      </div>
-                      <MinMaxCounter
-                        minValue={entry.minPeople}
-                        maxValue={entry.maxPeople}
-                        maxEnabled={entry.maxPeople !== null}
-                        minCheckboxEnabled={entry.minPeople !== null}
-                        // Checkbox only fires ON when the bound was off, and
-                        // off ⇔ null — default min→1, max→min (else 1).
-                        onMinCheckboxChange={(on) => patchEntry(k, { minPeople: on ? 1 : null })}
-                        onMinChange={(v) => patchEntry(k, { minPeople: v })}
-                        onMaxChange={(v) => patchEntry(k, { maxPeople: v })}
-                        onMaxEnabledChange={(on) =>
-                          patchEntry(k, { maxPeople: on ? entry.minPeople ?? 1 : null })
-                        }
-                        minLimit={1}
-                        maxLimit={MAX_PEOPLE}
-                        increment={1}
-                        minLabel="At Least"
-                        maxLabel="No More Than"
-                      />
-                    </section>
-                    </Fragment>
-                  );
-                })}
-              </div>
-            </div>
+            {/* The activity's who-with condition — ONE always-present card in
+                the settings-card format (label/value rows over hairlines):
+                who it's with, the party-size range, and who it's explicitly
+                NOT with. "With"/"Without" expand in place into a search box +
+                suggestions, and keep their picks as pills under the row. */}
+            <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+              <CandidatePicker
+                label="With"
+                emptyValue="Anyone"
+                selected={withSelected}
+                options={candidateOptions}
+                onAdd={(c) => toggleEntryName(c.kind, c.name)}
+                onRemove={(c) => toggleEntryName(c.kind, c.name)}
+              />
+              <PartyCountField label="At Least" value={draft.entry.minPeople} setValue={setMinPeople} />
+              <PartyCountField
+                label="No More Than"
+                value={draft.entry.maxPeople}
+                setValue={setMaxPeople}
+                min={draft.entry.minPeople}
+              />
+              <CandidatePicker
+                label="Without"
+                emptyValue="No one"
+                selected={withoutSelected}
+                options={candidateOptions}
+                onAdd={(c) => toggleEntryName(excludeField(c.kind), c.name)}
+                onRemove={(c) => toggleEntryName(excludeField(c.kind), c.name)}
+              />
+            </section>
 
             {/* Name picker while ADDING: suggested activities grouped +
                 labeled by priority. Tapping one names the draft (and takes
