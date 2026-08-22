@@ -28,7 +28,7 @@
  */
 
 import { memo, useMemo } from "react";
-import type { Slot } from "@/lib/api/slots";
+import type { Slot, SlotEvent } from "@/lib/api/slots";
 import {
   activityColor,
   clusterLayout,
@@ -45,6 +45,58 @@ interface SlotCardProps {
   /** The single availability window this row represents. */
   line: SlotWindowLine;
   colors: Map<string, ActivityColor>;
+  /** The system-proposed events anchored to THIS window (see PlaylistTab's
+   *  eventsByEntryKey). Reference-stable when unchanged, for the memo. */
+  events: SlotEvent[];
+  onToggleConfirm: (ev: SlotEvent) => void;
+}
+
+/** One proposed event as a tiny card. Three button states:
+ *    - viewer confirmed → filled green "Going ✓" (tap cancels),
+ *    - joinable → blue "Confirm",
+ *    - would break a confirmed member's who-with condition → dead "Full"
+ *      (it comes back on its own if someone cancels — the tab polls).
+ *  A met event (the confirmed set satisfies everyone in it) bolds the card
+ *  and tints it green so "this is happening" reads at a glance. */
+function EventCard({ ev, onToggleConfirm }: { ev: SlotEvent; onToggleConfirm: (ev: SlotEvent) => void }) {
+  const full = !ev.viewer_confirmed && !ev.can_confirm;
+  return (
+    <div
+      title={ev.confirmed_names.length > 0 ? `Going: ${ev.confirmed_names.join(", ")}` : undefined}
+      className={`flex items-center gap-1.5 rounded-xl border py-1 pl-2 pr-1 text-[12.5px] leading-tight transition-colors ${
+        ev.met
+          ? "border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-semibold"
+          : "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+      }`}
+    >
+      <span className="whitespace-nowrap">
+        {ev.emoji ? `${ev.emoji} ` : ""}
+        {ev.activity}
+      </span>
+      {ev.confirmed_count > 0 && (
+        <span className={`whitespace-nowrap tabular-nums ${ev.met ? "text-green-600 dark:text-green-300" : "text-gray-400 dark:text-gray-500"}`}>
+          {ev.confirmed_count} in
+        </span>
+      )}
+      <button
+        type="button"
+        disabled={full}
+        onClick={() => onToggleConfirm(ev)}
+        aria-label={
+          ev.viewer_confirmed ? `Cancel ${ev.activity}` : full ? `${ev.activity} is full` : `Confirm ${ev.activity}`
+        }
+        className={`shrink-0 rounded-lg px-1.5 py-0.5 text-[11.5px] font-medium transition ${
+          ev.viewer_confirmed
+            ? "bg-green-600 text-white active:scale-95"
+            : full
+              ? "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default"
+              : "bg-blue-600 text-white active:scale-95"
+        }`}
+      >
+        {ev.viewer_confirmed ? "Going ✓" : full ? "Full" : "Confirm"}
+      </button>
+    </div>
+  );
 }
 
 /** The glyph shown inside an activity's circle: its emoji, else the first
@@ -53,7 +105,7 @@ function activitySymbol(name: string, emoji: string | null): string {
   return emoji || name.trim().charAt(0).toUpperCase() || "?";
 }
 
-function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
+function SlotCardImpl({ slot, line, colors, events, onToggleConfirm }: SlotCardProps) {
   // Resolve each activity's color once (stable per activity name across the
   // whole timeline — see buildActivityColorMap).
   const activities = slot.activities.map((a) => ({
@@ -131,9 +183,17 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
           </button>
           {/* Events hang under their time as children of it, so they're
               indented a step past the time text — pl-3 is the nesting step and
-              applies to the placeholder and to real events alike. */}
-          <div className="mt-2 pl-3 text-sm text-gray-400 dark:text-gray-500">
-            No events yet…
+              applies to the placeholder and to real events alike. Each is a
+              tiny card: the activity + who's in + a Confirm toggle. A MET
+              event (everyone confirmed's condition holds) goes bold + green;
+              a viewer whose joining would break a confirmed member's
+              condition sees a dead "Full" button instead. */}
+          <div className="mt-2 pl-3 flex flex-col items-start gap-1.5">
+            {events.length === 0 ? (
+              <span className="text-sm text-gray-400 dark:text-gray-500">No events yet…</span>
+            ) : (
+              events.map((ev) => <EventCard key={`${ev.day}#${ev.activity.toLowerCase()}`} ev={ev} onToggleConfirm={onToggleConfirm} />)
+            )}
           </div>
         </div>
         {/* pl-3 is the gutter between the two columns — the circles pack out

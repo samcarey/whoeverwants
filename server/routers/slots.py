@@ -21,6 +21,12 @@ from middleware import user_id_from_request as _user_id
 from services.auth import create_anonymous_user, resolve_actor_user_id
 from services.contacts import reconcile_contacts
 from services.groups import require_uuid
+from services.slot_events import (
+    EventFullError,
+    NoSuchEventError,
+    list_events,
+    set_confirmation,
+)
 from services.slots import (
     create_slot,
     delete_slot,
@@ -209,6 +215,64 @@ def who_with_candidates_endpoint(request: Request):
             reconcile_contacts(conn, user_id)
         candidates = who_with_candidates(conn, user_id=user_id)
     return WhoWithCandidatesResponse(candidates=candidates)
+
+
+class SlotEventResponse(BaseModel):
+    """One system-proposed event as THIS viewer sees it. Derived on every read
+    from the current slots + confirmations — see services/slot_events.py for
+    the semantics of met / can_confirm ("Full" when false and not confirmed)."""
+
+    day: str
+    activity: str
+    emoji: str | None = None
+    # The time the (confirmed + viewer) set still shares — the card's anchor.
+    window: dict | None = None
+    confirmed_count: int = 0
+    confirmed_names: list[str] = []
+    viewer_confirmed: bool = False
+    can_confirm: bool = False
+    met: bool = False
+
+
+class SlotEventsResponse(BaseModel):
+    events: list[SlotEventResponse] = []
+
+
+class EventConfirmationRequest(BaseModel):
+    day: str
+    activity: str
+    confirmed: bool
+
+
+@router.get("/events", response_model=SlotEventsResponse)
+def list_events_endpoint(request: Request):
+    # Everything proposed to this viewer across the days their slots touch.
+    # Identity-resolved like the rest of the slots API; no account → nothing.
+    with get_db() as conn:
+        user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=_browser_id(request))
+        events = list_events(conn, user_id=user_id)
+    return SlotEventsResponse(events=events)
+
+
+@router.post("/events/confirmation", response_model=SlotEventResponse)
+def set_event_confirmation_endpoint(req: EventConfirmationRequest, request: Request):
+    # Toggle the caller's confirmation. The server re-validates the join
+    # against the CURRENT confirmed set — the FE's can_confirm is advisory,
+    # so a race (someone else confirmed first) surfaces as 409 "Full" and the
+    # FE refreshes into the Full state.
+    with get_db() as conn:
+        user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=_browser_id(request))
+        if not user_id:
+            raise HTTPException(status_code=404, detail="Event not found")
+        try:
+            payload = set_confirmation(
+                conn, user_id=user_id, day=req.day, activity=req.activity, confirmed=req.confirmed
+            )
+        except NoSuchEventError:
+            raise HTTPException(status_code=404, detail="Event not found")
+        except EventFullError:
+            raise HTTPException(status_code=409, detail="Full")
+    return SlotEventResponse(**payload)
 
 
 @router.put("/{slot_id}", response_model=CreateSlotResponse)

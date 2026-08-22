@@ -2,7 +2,8 @@
 
 /**
  * The home page: the caller's saved availability slots, soonest first, each
- * rendered as a <SlotCard>. (Also rendered by HomeBackdropHost as the
+ * rendered as a <SlotCard>, with the system's proposed EVENTS hanging under
+ * the row whose window they fit (see the events block below). (Also rendered by HomeBackdropHost as the
  * swipe-back mirror of home, which is why it seeds from the slots cache.) Refreshes when a slot is created /
  * edited / deleted (SLOTS_CHANGED_EVENT, fired by the New Slot sheet) and when
  * the tab regains visibility. Tapping the "+" beside the "Time Slots" header
@@ -11,9 +12,18 @@
  * is no floating button for this tab.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiListSlots, getCachedSlots, type Slot } from "@/lib/api/slots";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  apiListSlots,
+  getCachedSlots,
+  apiGetSlotEvents,
+  getCachedSlotEvents,
+  apiSetEventConfirmation,
+  type Slot,
+  type SlotEvent,
+} from "@/lib/api/slots";
 import { haptic } from "@/lib/haptics";
+import { windowsOverlap } from "@/lib/timeUtils";
 import {
   buildActivityColorMap,
   sortSlotsChronological,
@@ -29,6 +39,10 @@ import {
 } from "@/lib/slotEvents";
 import SlotCard from "@/components/SlotCard";
 
+// Stable empty list so rows without events keep reference-equal props (the
+// memo'd SlotCard skips them on every poll tick).
+const NO_EVENTS: SlotEvent[] = [];
+
 export default function PlaylistTab() {
   // Seed from the last-resolved list so a first commit paints the timeline
   // instead of a spinner. Load-bearing for the swipe-back backdrop, which
@@ -36,6 +50,14 @@ export default function PlaylistTab() {
   // must paint settled content on its first commit" rule in CLAUDE.md).
   const [slots, setSlots] = useState<Slot[] | null>(() => getCachedSlots());
   const [error, setError] = useState(false);
+  // The system-proposed events for this viewer. Server-derived and volatile —
+  // someone else's confirm can flip a card to Full — so alongside the usual
+  // change-triggered loads this POLLS every 5s while the tab is visible (the
+  // group page's cadence: recursive setTimeout, never setInterval, skipped
+  // while hidden). A JSON-signature compare keeps no-change ticks from
+  // re-rendering every card.
+  const [events, setEvents] = useState<SlotEvent[]>(() => getCachedSlotEvents() ?? []);
+  const eventsSigRef = useRef<string>(JSON.stringify(getCachedSlotEvents() ?? []));
   // While the add-activity panel is up the column headers hide and both sticky
   // tiers below them shift to the top of the screen (PLAYLIST_HEADER_H_VAR),
   // so the tapped row's day + time are what sits under the panel.
@@ -44,6 +66,19 @@ export default function PlaylistTab() {
     const onPanel = (e: Event) => setAddingActivity(!!(e as CustomEvent<boolean>).detail);
     window.addEventListener(SLOT_ADD_PANEL_EVENT, onPanel);
     return () => window.removeEventListener(SLOT_ADD_PANEL_EVENT, onPanel);
+  }, []);
+
+  const loadEvents = useCallback(async () => {
+    try {
+      const next = await apiGetSlotEvents();
+      const sig = JSON.stringify(next);
+      if (sig !== eventsSigRef.current) {
+        eventsSigRef.current = sig;
+        setEvents(next);
+      }
+    } catch {
+      // Keep the last-known events; the next tick retries.
+    }
   }, []);
 
   const load = useCallback(async () => {
@@ -55,7 +90,8 @@ export default function PlaylistTab() {
       setSlots((prev) => prev ?? []);
       setError(true);
     }
-  }, []);
+    void loadEvents();
+  }, [loadEvents]);
 
   useEffect(() => {
     void load();
@@ -70,6 +106,48 @@ export default function PlaylistTab() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load]);
+
+  // The live-update loop: a confirm elsewhere must reach this screen with no
+  // refresh (a Full button appearing, a cancel freeing it, an event going
+  // bold). Recursive setTimeout so a slow response can never stack fetches.
+  useEffect(() => {
+    let alive = true;
+    let timer: number | undefined;
+    const tick = async () => {
+      if (!alive) return;
+      if (document.visibilityState === "visible") await loadEvents();
+      if (alive) timer = window.setTimeout(() => void tick(), 5000);
+    };
+    timer = window.setTimeout(() => void tick(), 5000);
+    return () => {
+      alive = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [loadEvents]);
+
+  // Confirm / cancel. The server is the real gate — on ANY failure (incl. the
+  // 409 "Full" race where someone else confirmed first) just re-pull the
+  // events and let the refreshed flags drive the button.
+  const toggleConfirm = useCallback(
+    async (ev: SlotEvent) => {
+      haptic.medium();
+      try {
+        const updated = await apiSetEventConfirmation(ev.day, ev.activity, !ev.viewer_confirmed);
+        setEvents((prev) => {
+          const next = prev.map((e) =>
+            e.day === updated.day && e.activity.toLowerCase() === updated.activity.toLowerCase()
+              ? updated
+              : e,
+          );
+          eventsSigRef.current = JSON.stringify(next);
+          return next;
+        });
+      } catch {
+        void loadEvents();
+      }
+    },
+    [loadEvents],
+  );
 
   // One row PER availability window across all slots, soonest first; a stable
   // per-activity color map keyed to chronological first-appearance.
@@ -91,6 +169,26 @@ export default function PlaylistTab() {
     }
     return out;
   }, [entries]);
+
+  // Attach each event to ONE row: the first of its day whose window overlaps
+  // the event's current common window (falling back to the day's first row,
+  // so a can't-currently-join event still shows somewhere). One row per event
+  // — an event spanning two of the viewer's windows would otherwise render
+  // twice with two live buttons.
+  const eventsByEntryKey = useMemo(() => {
+    const map = new Map<string, SlotEvent[]>();
+    for (const ev of events) {
+      const dayEntries = entries.filter((e) => e.day === ev.day);
+      if (dayEntries.length === 0) continue;
+      const target = ev.window
+        ? dayEntries.find((e) => windowsOverlap(e.window, ev.window!)) ?? dayEntries[0]
+        : dayEntries[0];
+      const list = map.get(target.key);
+      if (list) list.push(ev);
+      else map.set(target.key, [ev]);
+    }
+    return map;
+  }, [events, entries]);
 
   if (slots === null) {
     return (
@@ -221,7 +319,14 @@ export default function PlaylistTab() {
               vertical one between them. */}
           <div className="space-y-1">
             {g.entries.map((e) => (
-              <SlotCard key={e.key} slot={e.slot} line={e.line} colors={colors} />
+              <SlotCard
+                key={e.key}
+                slot={e.slot}
+                line={e.line}
+                colors={colors}
+                events={eventsByEntryKey.get(e.key) ?? NO_EVENTS}
+                onToggleConfirm={toggleConfirm}
+              />
             ))}
           </div>
         </div>

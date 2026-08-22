@@ -350,6 +350,9 @@ export interface SlotWindowEntry {
   day: string;
   /** Absolute start (minutes since epoch) for the global chronological sort. */
   startAbs: number;
+  /** Raw HH:MM bounds of this window — how PlaylistTab overlap-matches the
+   *  day's proposed events onto a specific row. */
+  window: { min: string; max: string };
   /** Stable React key. */
   key: string;
 }
@@ -368,6 +371,7 @@ export function slotWindowEntries(slots: Slot[]): SlotWindowEntry[] {
         line: lineFromInterval(iv),
         day: iv.day,
         startAbs: iv.startAbs,
+        window: { min: iv.min, max: iv.max },
         key: `${slot.id}#${iv.day}#${iv.min}-${iv.max}#${i}`,
       });
     });

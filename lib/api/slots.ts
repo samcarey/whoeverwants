@@ -140,6 +140,57 @@ export async function apiGetWhoWithCandidates(): Promise<WhoWithCandidate[]> {
   return res.candidates ?? [];
 }
 
+/** One system-proposed event as THIS viewer sees it. Derived server-side on
+ *  every read from the current slots + confirmations (see
+ *  services/slot_events.py) — none of this is stored, so it can flip under
+ *  the viewer as others confirm/cancel, which is why the Playlist tab polls. */
+export interface SlotEvent {
+  day: string;
+  activity: string;
+  emoji: string | null;
+  /** The time the (confirmed + viewer) set still shares — anchors the card to
+   *  a slot row. HH:MM bounds, cross-midnight convention (max <= min). */
+  window: { min: string; max: string } | null;
+  confirmed_count: number;
+  confirmed_names: string[];
+  viewer_confirmed: boolean;
+  /** False + not confirmed = the button reads "Full" (joining would break an
+   *  already-confirmed person's who-with condition). */
+  can_confirm: boolean;
+  /** The confirmed set satisfies everyone in it, minimums included — the
+   *  event is on; the card goes bold. */
+  met: boolean;
+}
+
+/** Last-resolved events list — the same first-commit-paint role cachedSlots
+ *  plays for the timeline. */
+let cachedEvents: SlotEvent[] | null = null;
+
+export function getCachedSlotEvents(): SlotEvent[] | null {
+  return cachedEvents;
+}
+
+export async function apiGetSlotEvents(): Promise<SlotEvent[]> {
+  const res = await slotFetch<{ events: SlotEvent[] }>("/events", { method: "GET" });
+  cachedEvents = res.events ?? [];
+  return cachedEvents;
+}
+
+/** Toggle the caller's confirmation on (day, activity). The server re-checks
+ *  the join against the CURRENT confirmed set — a race with someone else's
+ *  confirm surfaces as an ApiError 409 ("Full"); refetch and the button flips
+ *  to Full on its own. Returns the refreshed event as this caller sees it. */
+export async function apiSetEventConfirmation(
+  day: string,
+  activity: string,
+  confirmed: boolean,
+): Promise<SlotEvent> {
+  return slotFetch<SlotEvent>("/events/confirmation", {
+    method: "POST",
+    body: JSON.stringify({ day, activity, confirmed }),
+  });
+}
+
 export async function apiGetActivitySuggestions(
   dayTimeWindows: DayTimeWindow[],
 ): Promise<ActivitySuggestions> {
