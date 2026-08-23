@@ -945,7 +945,7 @@ export default function NewSlotSheet() {
               />
               <CandidatePicker
                 label="Without"
-                emptyValue="No one"
+                emptyValue="—"
                 selected={withoutSelected}
                 options={candidateOptions}
                 onAdd={(c) => toggleEntryRef(excludeField(c.kind), c)}
