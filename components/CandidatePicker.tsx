@@ -15,7 +15,7 @@
  * Selection-only: typing filters, it never creates a new name.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useKeyboardPrimer } from "@/lib/useKeyboardPrimer";
 
 /** See the scroll note in the header: expanding wants the row at the TOP of
@@ -85,10 +85,12 @@ export default function CandidatePicker({
 
   // Ref-read so the notify effect doesn't re-fire on a new callback identity;
   // the cleanup form guarantees a `false` even when unmounted while open
-  // (e.g. the activity editor sliding closed mid-search).
+  // (e.g. the activity editor sliding closed mid-search). LAYOUT effect, not
+  // passive: the host's spacer must be in the DOM before the scroll effect's
+  // rAF fires, or scrollIntoView runs with no scroll room and clamps to 0.
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     onOpenChangeRef.current?.(true);
     return () => onOpenChangeRef.current?.(false);
