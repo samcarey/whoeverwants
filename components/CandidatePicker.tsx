@@ -18,6 +18,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboardPrimer } from "@/lib/useKeyboardPrimer";
 
+/** See the scroll note in the header: expanding wants the row at the TOP of
+ *  the scroller. For rows near the bottom of a sheet (e.g. "Without", the
+ *  last field) there's no scroll room below, so `scrollIntoView` can't lift
+ *  them and the search box lands under the iOS keyboard. `onOpenChange` lets
+ *  the host add scroll room (a spacer) while a picker is open. */
+
 export interface Candidate {
   /** Matches the wire field the ref belongs to on a who-with entry. */
   kind: "groups" | "people";
@@ -58,6 +64,8 @@ interface CandidatePickerProps {
   options: Candidate[];
   onAdd: (c: Candidate) => void;
   onRemove: (c: Candidate) => void;
+  /** Fired when the search box expands/collapses (and on unmount while open). */
+  onOpenChange?: (open: boolean) => void;
 }
 
 export default function CandidatePicker({
@@ -67,12 +75,24 @@ export default function CandidatePicker({
   options,
   onAdd,
   onRemove,
+  onOpenChange,
 }: CandidatePickerProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const { prime, focusOnMount, cancel } = useKeyboardPrimer();
+
+  // Ref-read so the notify effect doesn't re-fire on a new callback identity;
+  // the cleanup form guarantees a `false` even when unmounted while open
+  // (e.g. the activity editor sliding closed mid-search).
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  useEffect(() => {
+    if (!open) return;
+    onOpenChangeRef.current?.(true);
+    return () => onOpenChangeRef.current?.(false);
+  }, [open]);
 
   const selectedKeys = useMemo(() => new Set(selected.map(candidateKey)), [selected]);
   // Unpicked + matching the query, MOST relevant first (the caller's order,

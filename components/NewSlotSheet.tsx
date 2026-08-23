@@ -417,6 +417,16 @@ export default function NewSlotSheet() {
     [draft.entry.excludeGroups, draft.entry.excludePeople],
   );
 
+  // While a who-with picker is expanded, the scroller grows a tall spacer so
+  // scrollIntoView can bring ANY row to the top — without it the "Without"
+  // row (the last field, nothing below it) can't scroll up and its search box
+  // lands under the iOS keyboard. A COUNT, not a boolean: tapping one picker
+  // while the other is open interleaves collapse/expand notifications.
+  const [pickersOpen, setPickersOpen] = useState(0);
+  const handlePickerOpenChange = useCallback((open: boolean) => {
+    setPickersOpen((c) => Math.max(0, c + (open ? 1 : -1)));
+  }, []);
+
   // ---- Draft helpers --------------------------------------------------------
 
   const setName = useCallback((name: string) => {
@@ -935,6 +945,7 @@ export default function NewSlotSheet() {
                 options={candidateOptions}
                 onAdd={(c) => toggleEntryRef(c.kind, c)}
                 onRemove={(c) => toggleEntryRef(c.kind, c)}
+                onOpenChange={handlePickerOpenChange}
               />
               <PartyCountField label="At Least" value={draft.entry.minPeople} setValue={setMinPeople} />
               <PartyCountField
@@ -950,6 +961,7 @@ export default function NewSlotSheet() {
                 options={candidateOptions}
                 onAdd={(c) => toggleEntryRef(excludeField(c.kind), c)}
                 onRemove={(c) => toggleEntryRef(excludeField(c.kind), c)}
+                onOpenChange={handlePickerOpenChange}
               />
             </section>
             )}
@@ -976,6 +988,12 @@ export default function NewSlotSheet() {
                 </button>
               </div>
             )}
+
+            {/* Scroll room for an expanded who-with picker (see pickersOpen
+                above): tall enough that even the last field's row can reach
+                the scroller top, clear of the soft keyboard. Sits under the
+                keyboard / off-screen, so it never reads as blank space. */}
+            {pickersOpen > 0 && <div aria-hidden className="h-[70vh] shrink-0" />}
           </div>
         </div>
       </div>
