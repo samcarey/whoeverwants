@@ -116,7 +116,7 @@ function EventCard({
         }
       }}
       title={ev.confirmed_names.length > 0 ? `Going: ${ev.confirmed_names.join(", ")}` : undefined}
-      className={`flex cursor-pointer items-center gap-2 rounded-2xl border py-1.5 pl-2.5 pr-1.5 text-[12.5px] leading-tight transition-colors active:opacity-80 ${cardCls}`}
+      className={`flex cursor-pointer items-center rounded-2xl border py-1.5 px-2.5 text-[12.5px] leading-tight transition-colors active:opacity-80 ${cardCls}`}
     >
       <div className="min-w-0 flex flex-col gap-1">
         <span className="truncate">
@@ -142,38 +142,36 @@ function EventCard({
           {extra > 0 && (
             <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">+{extra}</span>
           )}
-          {going && (
+          {/* The status/action pill ends the second line. Only Confirm is a
+              live button (stopPropagation so it doesn't also open the page);
+              the rest are indicators — the card tap handles navigation. */}
+          {going ? (
             <span className="ml-0.5 whitespace-nowrap rounded-full bg-green-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white">
               You&apos;re going!
             </span>
+          ) : pending ? (
+            <span className="ml-0.5 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-0.5 text-[11.5px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+              Pending
+            </span>
+          ) : full ? (
+            <span className="ml-0.5 whitespace-nowrap rounded-full bg-gray-200 px-2.5 py-0.5 text-[11.5px] font-medium text-gray-400 dark:bg-gray-700 dark:text-gray-500">
+              Full
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConfirm(ev);
+              }}
+              aria-label={`Confirm ${ev.activity}`}
+              className="ml-0.5 whitespace-nowrap rounded-full bg-blue-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white transition active:bg-blue-700"
+            >
+              Confirm
+            </button>
           )}
         </div>
       </div>
-      {/* The right-side PILL, vertically centered inside the card. Only the
-          Confirm state is a live button (it must not also open the page —
-          stopPropagation); the rest are status indicators, and the card tap
-          handles navigation. */}
-      {going ? null : pending ? (
-        <span className="shrink-0 self-center whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-1 text-[11.5px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-          Pending
-        </span>
-      ) : full ? (
-        <span className="shrink-0 self-center whitespace-nowrap rounded-full bg-gray-200 px-2.5 py-1 text-[11.5px] font-medium text-gray-400 dark:bg-gray-700 dark:text-gray-500">
-          Full
-        </span>
-      ) : (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onConfirm(ev);
-          }}
-          aria-label={`Confirm ${ev.activity}`}
-          className="shrink-0 self-center whitespace-nowrap rounded-full bg-blue-600 px-2.5 py-1 text-[11.5px] font-medium text-white transition active:bg-blue-700"
-        >
-          Confirm
-        </button>
-      )}
     </div>
   );
 }
