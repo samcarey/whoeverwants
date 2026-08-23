@@ -18,8 +18,10 @@
  *     red "Delete activity". The who-with card's With/Without pickers draw on
  *     `apiGetWhoWithCandidates` — the caller's groups + address book, ordered
  *     by how recently they last picked each — and store real ids, not names.
- *     Picking a suggestion fills the name + emoji and collapses the list. The add panel has NO ✓ — closing the keyboard (the
- *     iOS Done) commits it. In BOTH, focusing the name field drops down its
+ *     In the ADD panel, picking a suggestion COMMITS it (adds the activity to
+ *     the slot and dismisses the panel); in EDIT mode it just renames the
+ *     draft + takes its emoji. The add panel has NO ✓ — a typed name commits
+ *     on keyboard close (the iOS Done). In BOTH, focusing the name field drops down its
  *     suggestions (others planning this period / your past picks / others'
  *     past picks), grouped + narrowed by what's typed. Activities already on
  *     the slot are hidden from it (except the one being edited); only the
@@ -435,13 +437,65 @@ export default function NewSlotSheet() {
   const setEmoji = useCallback((emoji: string) => {
     setDraft((prev) => ({ ...prev, emoji }));
   }, []);
-  // Tapping a suggestion names the activity (and takes its emoji), then
-  // collapses the list — the pick IS the confirmation, so there's nothing left
-  // to check off.
-  const pickSuggestion = useCallback((s: ActivitySuggestion) => {
-    setDraft((prev) => ({ ...prev, name: s.name, emoji: s.emoji ?? prev.emoji }));
-    setSuggestOpen(false);
-  }, []);
+  // Commit ONE activity (append, or replace at activityIndex) onto the slot's
+  // list and close. Takes the draft EXPLICITLY so a suggestion tap can save
+  // its pick without waiting for the setDraft round-trip (handleSave's state
+  // read would be stale there). The legacy activity-level range is always
+  // written null — who_with is the source of truth now (an edit converts a
+  // legacy range into an entry via entriesFromActivity).
+  const saveActivityDraft = useCallback(
+    (d: ActivityDraft) => {
+      if (saving || deleting || !editingSlot) return;
+      const name = d.name.trim();
+      if (!name) return;
+      const key = nameKey(name);
+      const wire: SlotActivity = {
+        name,
+        emoji: d.emoji.trim() || null,
+        min_people: null,
+        max_people: null,
+        who_with: entryToWire(d.entry),
+      };
+      let base: SlotActivity[];
+      if (activityIndex !== null) {
+        base = editingSlot.activities.map((a, i) => (i === activityIndex ? wire : a));
+      } else {
+        // Adding: if the name collides with an existing activity, edit that
+        // one in place rather than creating a duplicate the server would
+        // silently dedupe away.
+        const collision = editingSlot.activities.findIndex((a) => nameKey(a.name) === key);
+        base =
+          collision >= 0
+            ? editingSlot.activities.map((a, i) => (i === collision ? wire : a))
+            : [...editingSlot.activities, wire];
+      }
+      // A rename can still collide with a DIFFERENT activity; the draft wins.
+      const activities = base.filter((a) => a === wire || nameKey(a.name) !== key);
+      setSaving(true);
+      haptic.success();
+      apiUpdateSlot(editingSlot.id, editingSlot.day_time_windows, activities)
+        .then(() => {
+          notifySlotsChanged();
+          close();
+        })
+        .catch(() => setSaving(false));
+    },
+    [saving, deleting, editingSlot, activityIndex, close],
+  );
+  // Tapping a suggestion: in the ADD panel the pick IS the whole act — commit
+  // it onto the slot and dismiss (no keyboard-close step, no lingering text
+  // box). In EDIT mode it just renames the draft (the sheet has a ✓ and other
+  // fields still worth touching), collapsing the list.
+  const pickSuggestion = useCallback(
+    (s: ActivitySuggestion) => {
+      setDraft((prev) => ({ ...prev, name: s.name, emoji: s.emoji ?? prev.emoji }));
+      setSuggestOpen(false);
+      if (isAddActivity) {
+        saveActivityDraft({ ...draft, name: s.name, emoji: s.emoji ?? draft.emoji });
+      }
+    },
+    [isAddActivity, draft, saveActivityDraft],
+  );
 
   const patchEntry = useCallback((patch: Partial<EditableEntry>) => {
     setDraft((prev) => ({ ...prev, entry: { ...prev.entry, ...patch } }));
@@ -499,44 +553,17 @@ export default function NewSlotSheet() {
   // with this one activity replaced or appended (schedule as-is).
   const handleSave = useCallback(() => {
     if (saving || deleting) return;
+    if (mode === "activity") {
+      saveActivityDraft(draft);
+      return;
+    }
     let req: Promise<unknown>;
     if (mode === "create") {
       if (dayTimeWindows.length === 0) return;
       req = apiCreateSlot(dayTimeWindows, []);
-    } else if (mode === "time") {
+    } else {
       if (!editingSlot || dayTimeWindows.length === 0) return;
       req = apiUpdateSlot(editingSlot.id, dayTimeWindows, editingSlot.activities);
-    } else {
-      if (!editingSlot) return;
-      const name = draft.name.trim();
-      if (!name) return;
-      const key = nameKey(name);
-      // The legacy activity-level range is always written null — who_with is
-      // the source of truth now (an edit converts a legacy range into an
-      // entry via entriesFromActivity).
-      const wire: SlotActivity = {
-        name,
-        emoji: draft.emoji.trim() || null,
-        min_people: null,
-        max_people: null,
-        who_with: entryToWire(draft.entry),
-      };
-      let base: SlotActivity[];
-      if (activityIndex !== null) {
-        base = editingSlot.activities.map((a, i) => (i === activityIndex ? wire : a));
-      } else {
-        // Adding: if the name collides with an existing activity, edit that
-        // one in place rather than creating a duplicate the server would
-        // silently dedupe away.
-        const collision = editingSlot.activities.findIndex((a) => nameKey(a.name) === key);
-        base =
-          collision >= 0
-            ? editingSlot.activities.map((a, i) => (i === collision ? wire : a))
-            : [...editingSlot.activities, wire];
-      }
-      // A rename can still collide with a DIFFERENT activity; the draft wins.
-      const activities = base.filter((a) => a === wire || nameKey(a.name) !== key);
-      req = apiUpdateSlot(editingSlot.id, editingSlot.day_time_windows, activities);
     }
     setSaving(true);
     haptic.success();
@@ -546,7 +573,7 @@ export default function NewSlotSheet() {
         close();
       })
       .catch(() => setSaving(false));
-  }, [saving, deleting, mode, dayTimeWindows, draft, activityIndex, editingSlot, close]);
+  }, [saving, deleting, mode, dayTimeWindows, draft, editingSlot, close, saveActivityDraft]);
 
   // Delete the slot being edited (time mode).
   const handleDeleteSlot = useCallback(() => {
@@ -705,7 +732,8 @@ export default function NewSlotSheet() {
         />
       </div>
       {/* The field's own dropdown: suggested activities grouped +
-          labeled by priority, narrowed by what's typed. Tapping one
+          labeled by priority, narrowed by what's typed. Tapping one commits
+          it outright in the add panel (see pickSuggestion); in edit mode it
           names the draft (and takes its emoji) and collapses the list.
           Only the "you've picked before" group carries an ✕ to delete
           (behind a confirmation → blacklist); the others (things other
