@@ -27,6 +27,7 @@ import { navigateWithTransition } from "@/lib/viewTransitions";
 import { useSwipeBackGesture, useHeaderPortalRef } from "@/lib/useSwipeBackGesture";
 import { SHOW_HOME_BACKDROP_EVENT, HIDE_HOME_BACKDROP_EVENT } from "@/lib/eventChannels";
 import HeaderPortal from "@/components/HeaderPortal";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import InitialBubble from "@/components/InitialBubble";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import { GroupGlyph } from "@/components/CandidatePicker";
@@ -90,6 +91,7 @@ function EventPageInner() {
   const [events, setEvents] = useState<SlotEvent[]>(() => getCachedSlotEvents() ?? []);
   const [slots, setSlots] = useState<Slot[] | null>(() => getCachedSlots());
   const [busy, setBusy] = useState(false);
+  const [confirmingBackOut, setConfirmingBackOut] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -322,7 +324,7 @@ function EventPageInner() {
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void setConfirmed(false)}
+                    onClick={() => setConfirmingBackOut(true)}
                     className="w-full rounded-2xl bg-red-50 py-3 font-medium text-red-600 transition active:bg-red-100 disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:active:bg-red-900/50"
                   >
                     Back Out
@@ -346,6 +348,19 @@ function EventPageInner() {
           )}
         </div>
       </div>
+
+      {/* Backing out affects everyone counting on the event — confirm first. */}
+      <ConfirmationModal
+        isOpen={confirmingBackOut}
+        message={`Back out of ${ev?.activity ?? "this event"}? The others will see you've left.`}
+        confirmText="Back Out"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        onConfirm={() => {
+          setConfirmingBackOut(false);
+          void setConfirmed(false);
+        }}
+        onCancel={() => setConfirmingBackOut(false)}
+      />
     </>
   );
 }
