@@ -149,8 +149,12 @@ function EventCard({
           stopPropagation); the rest are status indicators, and the card tap
           handles navigation. */}
       {going ? (
-        <span className="shrink-0 self-center whitespace-nowrap rounded-full bg-green-600 px-2.5 py-1 text-[11.5px] font-medium text-white">
-          You&apos;re going!
+        // Two lines — one line ("You're going!") is the widest pill by far
+        // and crowded the activity title out of the left column.
+        <span className="shrink-0 self-center rounded-2xl bg-green-600 px-2.5 py-1 text-center text-[11.5px] font-medium leading-tight text-white">
+          You&apos;re
+          <br />
+          going!
         </span>
       ) : pending ? (
         <span className="shrink-0 self-center whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-1 text-[11.5px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
