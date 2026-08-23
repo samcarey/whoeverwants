@@ -304,12 +304,12 @@ function EventPageInner() {
                       <div className="flex h-12 items-center justify-between gap-3">
                         <span>No More Than</span>
                         <span className="text-gray-500 dark:text-gray-500">
-                          {maxPeople ? partyCountLabel(maxPeople) : "No limit"}
+                          {maxPeople ? partyCountLabel(maxPeople) : "—"}
                         </span>
                       </div>
                       <div className="flex min-h-12 items-center justify-between gap-3 py-2">
                         <span className="shrink-0">Without</span>
-                        <RefPills refs={withoutRefs} empty="No one" />
+                        <RefPills refs={withoutRefs} empty="—" />
                       </div>
                     </div>
                   </div>
