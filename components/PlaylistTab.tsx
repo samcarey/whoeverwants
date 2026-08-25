@@ -71,6 +71,16 @@ export default function PlaylistTab() {
     return () => window.removeEventListener(SLOT_ADD_PANEL_EVENT, onPanel);
   }, []);
 
+  // Paint the page in the timeline surface while this screen is up (slots then
+  // read as cards in --background — see the html.playlist-surface rule). On
+  // <html> rather than a layer in this tree: only the root's background
+  // propagates to the canvas, so it covers the viewport however short the
+  // content is. Removed on unmount so any other route keeps the normal page.
+  useEffect(() => {
+    document.documentElement.classList.add("playlist-surface");
+    return () => document.documentElement.classList.remove("playlist-surface");
+  }, []);
+
   const loadEvents = useCallback(async () => {
     try {
       const next = await apiGetSlotEvents();
@@ -235,7 +245,7 @@ export default function PlaylistTab() {
           7.6px + 28px line + 4px = 39.6px. */}
       <div
         data-playlist-headers=""
-        className={`sticky top-0 z-30 flex items-center bg-gray-100 dark:bg-gray-900 pt-[7.6px] pb-1 ${
+        className={`sticky top-0 z-30 flex items-center bg-[var(--playlist-surface)] pt-[7.6px] pb-1 ${
           addingActivity ? "hidden" : ""
         }`}
         style={edgeToEdgeStyle("0.25rem", "0.75rem")}
@@ -285,13 +295,6 @@ export default function PlaylistTab() {
         } as React.CSSProperties
       }
     >
-      {/* The timeline's surface. Page and slot trade places vs the original:
-          the PAGE is the tinted shade and each slot sits on it as a card in
-          the page background. Fixed + behind the content (negative z paints
-          over the canvas but under everything in flow) so it covers the whole
-          viewport without touching layout or scroll height. Anything that
-          masks scrolled content (the sticky tiers below) matches THIS color. */}
-      <div aria-hidden className="fixed inset-0 -z-10 bg-gray-100 dark:bg-gray-900" />
       {header}
       {entries.length === 0 && (
         <div className="text-center py-8">
@@ -320,7 +323,7 @@ export default function PlaylistTab() {
             {/* 25.2px line + 4px = 29.2px, so this bar ends at 68.8px — the
                 offset each row's sticky time stacks against. */}
             <div
-              className="flex items-center gap-3 bg-gray-100 dark:bg-gray-900 pb-1"
+              className="flex items-center gap-3 bg-[var(--playlist-surface)] pb-1"
               style={edgeToEdgeStyle("0.25rem", "0.25rem")}
             >
               <div className="flex items-baseline gap-1.5 shrink-0">

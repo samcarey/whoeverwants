@@ -19,6 +19,8 @@
   --foreground: #171717;
   /* Emoji contour outline — dark on the light bg, light on the dark bg. */
   --emoji-outline: rgba(0, 0, 0, 0.48);
+  /* Playlist timeline surface — see the html.playlist-surface rule below. */
+  --playlist-surface: #f3f4f6;
 }
 
 @theme inline {
@@ -33,6 +35,7 @@
     --background: #0a0a0a;
     --foreground: #ededed;
     --emoji-outline: rgba(255, 255, 255, 0.54);
+    --playlist-surface: #17171a;
   }
 }
 
@@ -40,6 +43,7 @@
   --background: #ffffff;
   --foreground: #171717;
   --emoji-outline: rgba(0, 0, 0, 0.48);
+  --playlist-surface: #f3f4f6;
   color-scheme: light;
 }
 
@@ -47,6 +51,7 @@
   --background: #0a0a0a;
   --foreground: #ededed;
   --emoji-outline: rgba(255, 255, 255, 0.54);
+  --playlist-surface: #17171a;
   color-scheme: dark;
 }
 
@@ -71,6 +76,18 @@ html {
      phrase div's innerHTML repeatedly on mount, which otherwise lets the
      browser re-pick its anchor and compensate scrollY by the node height. */
   overflow-anchor: none;
+}
+
+/* Playlist timeline: the page and each slot trade surfaces — the page is the
+   tinted shade and every slot is a card in --background (the inverse of a
+   card-on-white list). Set on BOTH <html> and <body>: html's background
+   propagates to the canvas so it covers the viewport no matter how short the
+   content is, and body's own background would otherwise paint over it across
+   the content box. A fixed z-[-1] layer does NOT work for the same reason —
+   in-flow block backgrounds (body's) paint after negative-z children. */
+html.playlist-surface,
+html.playlist-surface body {
+  background: var(--playlist-surface);
 }
 
 body {
