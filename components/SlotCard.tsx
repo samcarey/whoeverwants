@@ -196,7 +196,8 @@ function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: Sl
   const plusPosition = layout.positions[activities.length];
 
   return (
-    // The row sits in a borderless card a shade off the page background, with
+    // The row sits in a borderless card in the PAGE background color, lifted
+    // off the tinted timeline surface behind it (PlaylistTab paints that), with
     // very rounded corners, running edge-to-edge: the negative margins cancel
     // the page's safe-area padding so the card touches both screen edges, and
     // the padding puts the content back inside — a touch further right than
@@ -207,7 +208,7 @@ function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: Sl
       // No `w-full`: width must stay auto so the negative margins actually
       // stretch the card past both page edges (`width: 100%` would pin it to
       // the padded container and only the left margin would take effect).
-      className="rounded-3xl bg-gray-100 dark:bg-gray-900 pt-2 pb-1"
+      className="rounded-3xl bg-background pt-2 pb-1"
       style={edgeToEdgeStyle("0.25rem", "0.75rem")}
     >
       {/* One row: the time span + events placeholder in the LEFT column (sized
