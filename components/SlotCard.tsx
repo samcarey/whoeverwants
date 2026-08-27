@@ -269,7 +269,7 @@ function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: Sl
       // No `w-full`: width must stay auto so the negative margins actually
       // stretch the card past both page edges (`width: 100%` would pin it to
       // the padded container and only the left margin would take effect).
-      className="rounded-3xl bg-background pt-2 pb-1"
+      className="rounded-3xl bg-background py-2"
       style={edgeToEdgeStyle("0.25rem", "0.75rem")}
     >
       {/* One row: the time span + events placeholder in the LEFT column (sized
