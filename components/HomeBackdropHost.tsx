@@ -75,7 +75,14 @@ export default function HomeBackdropHost(): React.ReactElement | null {
           position: "fixed",
           inset: 0,
           zIndex: 0,
-          background: "var(--background)",
+          // The timeline surface, NOT --background: this mirrors home, and
+          // home paints the tinted surface (the slot cards are the ones in
+          // --background). This layer covers the whole viewport and outlives
+          // the commit by the unmount delay, so getting it wrong shows as the
+          // white cards bleeding into a white page for that window — the real
+          // page underneath is transparent, so whatever this paints IS the
+          // background the user sees.
+          background: "var(--playlist-surface)",
           // `overflow-y: auto` + `overflow-x: hidden` instead of just
           // `overflow-y: auto`. Per CSS spec, when one axis is non-
           // `visible` the other coerces from `visible` to `auto` — so a
