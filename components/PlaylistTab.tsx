@@ -47,27 +47,6 @@ import SlotCard from "@/components/SlotCard";
 // memo'd SlotCard skips them on every poll tick).
 const NO_EVENTS: SlotEvent[] = [];
 
-/**
- * Claim the page's timeline surface (see the html.playlist-surface rule), and
- * release it on unmount.
- *
- * REF-COUNTED, because more than one timeline is mounted at a time: a
- * swipe-back renders this component twice — once as HomeBackdropHost's mirror
- * under the sliding page, once as the real route — and a plain
- * add-on-mount/remove-on-unmount pair lets the mirror's teardown strip the
- * class off the instance that's still on screen. The page then falls back to
- * --background, which is the same white as the cards, so they visibly bleed
- * into it. Only the LAST timeline to leave puts the surface back.
- */
-let surfaceClaims = 0;
-function claimPlaylistSurface(): () => void {
-  surfaceClaims += 1;
-  document.documentElement.classList.add("playlist-surface");
-  return () => {
-    surfaceClaims = Math.max(0, surfaceClaims - 1);
-    if (surfaceClaims === 0) document.documentElement.classList.remove("playlist-surface");
-  };
-}
 
 export default function PlaylistTab() {
   // Seed from the last-resolved list so a first commit paints the timeline
@@ -93,13 +72,6 @@ export default function PlaylistTab() {
     window.addEventListener(SLOT_ADD_PANEL_EVENT, onPanel);
     return () => window.removeEventListener(SLOT_ADD_PANEL_EVENT, onPanel);
   }, []);
-
-  // Paint the page in the timeline surface while this screen is up (slots then
-  // read as cards in --background — see the html.playlist-surface rule). On
-  // <html> rather than a layer in this tree: only the root's background
-  // propagates to the canvas, so it covers the viewport however short the
-  // content is. Released on unmount so any other route keeps the normal page.
-  useEffect(() => claimPlaylistSurface(), []);
 
   const loadEvents = useCallback(async () => {
     try {

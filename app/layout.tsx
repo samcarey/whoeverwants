@@ -7,6 +7,7 @@ import CommitInfo from "@/components/CommitInfo";
 import ResponsiveScaling from "@/components/ResponsiveScaling";
 import { SlideOverlayHost } from "@/lib/slideOverlay";
 import HomeBackdropHost from "@/components/HomeBackdropHost";
+import PlaylistSurfaceHost from "@/components/PlaylistSurfaceHost";
 import GroupsBackdropHost from "@/components/GroupsBackdropHost";
 import GroupBackdropHost from "@/components/GroupBackdropHost";
 import PollBackdropHost from "@/components/PollBackdropHost";
@@ -149,6 +150,9 @@ export default function RootLayout({
             frame between GroupContent's unmount and the real home page's
             first paint. */}
         <HomeBackdropHost />
+        {/* Owns the timeline's page surface; route-driven so a swipe-back
+            can't strip it mid-transition. */}
+        <PlaylistSurfaceHost />
 
         {/* Mirrors /groups (the group list) for the group detail page's
             swipe-back gesture — see components/GroupsBackdropHost.tsx. */}
