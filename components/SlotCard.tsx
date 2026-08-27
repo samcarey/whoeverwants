@@ -292,12 +292,16 @@ function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: Sl
         <div
           data-slot-time=""
           className="sticky z-[15] shrink-0 self-start"
-          // TIME_COLUMN_BASIS is the shared divide with the column headers; a
-          // minimum rather than a width so a long time span on a narrow screen
-          // pushes the boundary out instead of spilling into the circles.
+          // TIME_COLUMN_BASIS is the shared divide with the column headers.
+          // An explicit WIDTH, not a min: the event cards fill the column, so
+          // a content-sized column would be defined by its longest card (and
+          // nothing would ever truncate). min-content keeps the one thing that
+          // genuinely can't give — the nowrap time chip — able to push the
+          // boundary out on a narrow screen; the cards, which truncate, don't.
           style={{
             top: `calc(var(${PLAYLIST_HEADER_H_VAR}) + 37.2px)`,
-            minWidth: TIME_COLUMN_BASIS,
+            width: TIME_COLUMN_BASIS,
+            minWidth: "min-content",
           }}
         >
           {/* This window's time span on ONE line (nowrap — the column sizes to
