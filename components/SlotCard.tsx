@@ -169,7 +169,10 @@ function EventCard({
         {/* Line 1 — the title gives way first: it truncates so the "@ time"
             (shrink-0) is always readable rather than being pushed off. */}
         <span className="flex items-baseline min-w-0">
-          <span className="truncate">
+          {/* min-w-0 as well as truncate: without it the nowrap title still
+              reports its full width as min-content and drags the whole column
+              out with it. */}
+          <span className="min-w-0 truncate">
             {ev.emoji ? `${ev.emoji} ` : ""}
             {ev.activity}
           </span>
