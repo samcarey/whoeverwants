@@ -35,6 +35,7 @@ import {
   clusterLayout,
   edgeToEdgeStyle,
   CLUSTER_CIRCLE_PX,
+  TIME_COLUMN_BASIS,
   type ActivityColor,
   type SlotWindowLine,
 } from "@/lib/slotUtils";
@@ -234,7 +235,13 @@ function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: Sl
         <div
           data-slot-time=""
           className="sticky z-[15] shrink-0 self-start"
-          style={{ top: `calc(var(${PLAYLIST_HEADER_H_VAR}) + 37.2px)` }}
+          // TIME_COLUMN_BASIS is the shared divide with the column headers; a
+          // minimum rather than a width so a long time span on a narrow screen
+          // pushes the boundary out instead of spilling into the circles.
+          style={{
+            top: `calc(var(${PLAYLIST_HEADER_H_VAR}) + 37.2px)`,
+            minWidth: TIME_COLUMN_BASIS,
+          }}
         >
           {/* This window's time span on ONE line (nowrap — the column sizes to
               it, so the duration never wraps), left-justified against the

@@ -33,6 +33,7 @@ import {
   slotWindowEntries,
   type SlotWindowEntry,
   edgeToEdgeStyle,
+  TIME_COLUMN_BASIS,
 } from "@/lib/slotUtils";
 import {
   SLOTS_CHANGED_EVENT,
@@ -250,16 +251,18 @@ export default function PlaylistTab() {
         }`}
         style={edgeToEdgeStyle("0.25rem", "0.75rem")}
       >
-        {/* Each label is centered over its own column. The rows' left column
-            is content-sized (it hugs its own time text), so there's no single
-            shared boundary to align to — 45% is where the widest time span
-            ends, i.e. the visual split between the two halves.
+        {/* Each label is centered over its own column, split on the same
+            TIME_COLUMN_BASIS the rows use — so the labels name the boundary
+            the content actually sits on.
             The whole left header is the add-a-slot button — a pill in the
             app's subtle-blue stack (the SearchRadiusBubble convention), which
             is affordance enough that the label drops its underline. It has no
             vertical padding: the text's own 28px line box gives the pill its
             height, so the bar's height (load-bearing, above) is unchanged. */}
-        <span className="w-[45%] shrink-0 flex items-center justify-center">
+        <span
+          className="shrink-0 flex items-center justify-center"
+          style={{ width: TIME_COLUMN_BASIS }}
+        >
           {/* The only way to add a slot (there's no floating button). */}
           <button
             type="button"

@@ -47,6 +47,19 @@ export function edgeToEdgeStyle(padLeft: string, padRight: string): CSSPropertie
   };
 }
 
+/**
+ * The divide between a row's two halves: the time slot + its events on the
+ * left, the interest circles on the right. ONE constant so the column headers
+ * and the rows agree — they drifted before (the header split at 45% while the
+ * time chip alone already ran past it, so the labels named a boundary the
+ * content didn't sit on).
+ *
+ * Applied as a MINIMUM on the rows, not a hard width: the time chip is
+ * nowrap, so on a narrow screen it has to be able to push the boundary right
+ * rather than spill into the circles.
+ */
+export const TIME_COLUMN_BASIS = "53%";
+
 export interface ActivityColor {
   /** Vertical-bar background — a DARKER shade in light mode, LIGHTER in dark
    *  mode (`bg-*-600 dark:bg-*-400`), for contrast against each theme's bg. */
