@@ -338,7 +338,15 @@ function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: Sl
               tapping the card opens the event's own page, where Back Out
               lives. A met event YOU are in goes bold + green; a met event
               you're locked out of is grey. */}
-          <div className="mt-2 flex flex-col items-stretch gap-1.5">
+          {/* contain: inline-size takes the cards OUT of the column's own
+              width calculation. They fill the column, so without it the column
+              is sized by its longest card (nothing truncates, and the circles
+              get shoved off) — while the min-content floor above still has to
+              see the time chip, which genuinely can't shrink. */}
+          <div
+            className="mt-2 flex flex-col items-stretch gap-1.5"
+            style={{ contain: "inline-size" }}
+          >
             {events.length === 0 ? (
               <span className="text-sm text-gray-400 dark:text-gray-500">No events yet…</span>
             ) : (
