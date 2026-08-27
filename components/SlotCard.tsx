@@ -27,7 +27,7 @@
  *   - the "+" circle → add a new activity ('activity' mode, no index).
  */
 
-import { memo, useMemo } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import InitialBubble from "@/components/InitialBubble";
 import type { Slot, SlotEvent } from "@/lib/api/slots";
 import {
@@ -63,8 +63,47 @@ function fmtClock(hhmm: string): string {
   return m === 0 ? `${h12} ${period}` : `${h12}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-// Confirmed-people discs shown on an event card before collapsing to "+X".
-const MAX_EVENT_ICONS = 4;
+// Geometry of the confirmed-people discs, used to work out how many fit on a
+// card's second line before they'd run into the status pill (see useDiscFit).
+const DISC_PX = 18;
+const DISC_GAP_PX = 4; // gap-1
+const DISC_PITCH_PX = DISC_PX + DISC_GAP_PX;
+// Room the "+X" overflow label needs (2 digits at text-[11px] plus its gap).
+const OVERFLOW_LABEL_PX = 26;
+
+/**
+ * How many discs fit in the space left over beside the status pill, and the
+ * ref to hang on the strip that holds them.
+ *
+ * The measured element is the flex-1 strip, whose width comes from the row
+ * minus the (shrink-0) pill — NOT from the discs themselves. That's the
+ * load-bearing part: measuring an element whose own children's visibility you
+ * then mutate is the feedback loop documented on VoterList's single-line mode.
+ */
+function useDiscFit(total: number) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [fit, setFit] = useState(total);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth;
+      if (w <= 0) return;
+      const all = Math.floor((w + DISC_GAP_PX) / DISC_PITCH_PX);
+      // Everything fits, or one slot goes to the "+X" that stands for the rest.
+      const next =
+        all >= total
+          ? total
+          : Math.max(0, Math.floor((w - OVERFLOW_LABEL_PX + DISC_GAP_PX) / DISC_PITCH_PX));
+      setFit((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [total]);
+  return { ref, fit };
+}
 
 /** One proposed event: a tiny two-line card. Tapping the CARD opens the
  *  event's own page (people list, your conditions, Back Out); the right-side
@@ -76,9 +115,12 @@ const MAX_EVENT_ICONS = 4;
  *      green, even when the party is met: a happening event you're not part
  *      of isn't good news for YOU.
  *  Cancelling moved to the event page's "Back Out" — no cancel here.
- *  Line 1 is {emoji} {activity} @ {earliest-viable time}; line 2 is one disc
- *  per OTHER confirmed person (the server already excludes the viewer from
- *  confirmed_names), "+X" past the cap. */
+ *  Every card is the full width of the time-slot column, so a row of them
+ *  reads as one stack rather than a ragged edge. Line 1 is {emoji} {activity}
+ *  @ {earliest-viable time}, the title truncating so the time survives; line 2
+ *  is one disc per OTHER confirmed person (the server already excludes the
+ *  viewer from confirmed_names) with the status pill closing it on the right,
+ *  the discs collapsing to "+X" where they'd meet it. */
 function EventCard({
   ev,
   onConfirm,
@@ -91,8 +133,12 @@ function EventCard({
   const going = ev.viewer_confirmed && ev.met;
   const pending = ev.viewer_confirmed && !ev.met;
   const full = !ev.viewer_confirmed && !ev.can_confirm;
-  const shown = ev.confirmed_names.slice(0, MAX_EVENT_ICONS);
-  const extra = ev.confirmed_count - (ev.viewer_confirmed ? 1 : 0) - shown.length;
+  // Everyone confirmed except the viewer (the server already leaves them out of
+  // confirmed_names; confirmed_count counts them).
+  const othersTotal = ev.confirmed_count - (ev.viewer_confirmed ? 1 : 0);
+  const { ref: discsRef, fit } = useDiscFit(othersTotal);
+  const shown = ev.confirmed_names.slice(0, fit);
+  const extra = othersTotal - shown.length;
   const cardCls = going
     ? "border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-semibold"
     : pending
@@ -117,45 +163,56 @@ function EventCard({
         }
       }}
       title={ev.confirmed_names.length > 0 ? `Going: ${ev.confirmed_names.join(", ")}` : undefined}
-      className={`flex cursor-pointer items-center rounded-2xl border py-1.5 px-2.5 text-[12.5px] leading-tight transition-colors active:opacity-80 ${cardCls}`}
+      className={`flex w-full cursor-pointer items-center rounded-2xl border py-1.5 px-2.5 text-[12.5px] leading-tight transition-colors active:opacity-80 ${cardCls}`}
     >
-      <div className="min-w-0 flex flex-col gap-1">
-        <span className="truncate">
-          {ev.emoji ? `${ev.emoji} ` : ""}
-          {ev.activity}
-          {ev.time && <span className={timeCls}> @ {fmtClock(ev.time)}</span>}
+      <div className="min-w-0 flex-1 flex flex-col gap-1">
+        {/* Line 1 — the title gives way first: it truncates so the "@ time"
+            (shrink-0) is always readable rather than being pushed off. */}
+        <span className="flex items-baseline min-w-0">
+          <span className="truncate">
+            {ev.emoji ? `${ev.emoji} ` : ""}
+            {ev.activity}
+          </span>
+          {ev.time && <span className={`${timeCls} shrink-0`}>&nbsp;@ {fmtClock(ev.time)}</span>}
         </span>
+        {/* Line 2 — discs from the left, status pill pinned bottom-right. The
+            discs take whatever the pill leaves and collapse to "+X" at the
+            point they'd otherwise run into it (see useDiscFit). */}
         <div className="flex items-center gap-1 min-h-[18px]">
-          {shown.length === 0 ? (
-            <span className="text-[11px] font-normal text-gray-400 dark:text-gray-500">
-              {ev.viewer_confirmed ? "Just you so far" : "No one yet"}
-            </span>
-          ) : (
-            shown.map((n, i) => (
-              <InitialBubble
-                key={`${n}#${i}`}
-                name={n}
-                sizeClassName="w-[18px] h-[18px]"
-                textSizeClassName="text-[8px]"
-              />
-            ))
-          )}
-          {extra > 0 && (
-            <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">+{extra}</span>
-          )}
-          {/* The status/action pill ends the second line. Only Confirm is a
-              live button (stopPropagation so it doesn't also open the page);
-              the rest are indicators — the card tap handles navigation. */}
+          <div ref={discsRef} className="min-w-0 flex-1 flex items-center gap-1 overflow-hidden">
+            {shown.length === 0 && extra <= 0 ? (
+              <span className="truncate text-[11px] font-normal text-gray-400 dark:text-gray-500">
+                {ev.viewer_confirmed ? "Just you so far" : "No one yet"}
+              </span>
+            ) : (
+              shown.map((n, i) => (
+                <InitialBubble
+                  key={`${n}#${i}`}
+                  name={n}
+                  sizeClassName="w-[18px] h-[18px]"
+                  textSizeClassName="text-[8px]"
+                />
+              ))
+            )}
+            {extra > 0 && (
+              <span className="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+                +{extra}
+              </span>
+            )}
+          </div>
+          {/* Only Confirm is a live button (stopPropagation so it doesn't also
+              open the page); the rest are indicators — the card tap handles
+              navigation. */}
           {going ? (
-            <span className="ml-0.5 whitespace-nowrap rounded-full bg-green-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white">
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-green-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white">
               You&apos;re going!
             </span>
           ) : pending ? (
-            <span className="ml-0.5 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-0.5 text-[11.5px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-0.5 text-[11.5px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
               Pending
             </span>
           ) : full ? (
-            <span className="ml-0.5 whitespace-nowrap rounded-full bg-gray-200 px-2.5 py-0.5 text-[11.5px] font-medium text-gray-400 dark:bg-gray-700 dark:text-gray-500">
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-gray-200 px-2.5 py-0.5 text-[11.5px] font-medium text-gray-400 dark:bg-gray-700 dark:text-gray-500">
               Full
             </span>
           ) : (
@@ -166,7 +223,7 @@ function EventCard({
                 onConfirm(ev);
               }}
               aria-label={`Confirm ${ev.activity}`}
-              className="ml-0.5 whitespace-nowrap rounded-full bg-blue-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white transition active:bg-blue-700"
+              className="shrink-0 whitespace-nowrap rounded-full bg-blue-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white transition active:bg-blue-700"
             >
               Confirm
             </button>
@@ -274,7 +331,7 @@ function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: Sl
               tapping the card opens the event's own page, where Back Out
               lives. A met event YOU are in goes bold + green; a met event
               you're locked out of is grey. */}
-          <div className="mt-2 flex flex-col items-start gap-1.5">
+          <div className="mt-2 flex flex-col items-stretch gap-1.5">
             {events.length === 0 ? (
               <span className="text-sm text-gray-400 dark:text-gray-500">No events yet…</span>
             ) : (
