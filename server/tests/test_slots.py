@@ -433,6 +433,57 @@ def _share_a_group(client, a_browser, b_browser):
     return gid
 
 
+def _all_suggested_names(res) -> set[str]:
+    body = res.json()
+    return {s["name"] for group in ("overlapping", "yours", "others") for s in body[group]}
+
+
+def test_suggestions_respect_the_suggesters_who_with(client):
+    """Another user's activity only surfaces as a suggestion when its who-with
+    ADMITS the viewer: a With list must claim them (directly or via a group),
+    a Without list must not name them. Unconditioned activities go to anyone."""
+    a, b, c = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    _sign_in(client, a, "Ana")
+    _sign_in(client, b, "Bo")
+    c_uid = _sign_in(client, c, "Cal")
+    g1 = _share_a_group(client, a, b)  # B is in A's crew group; C is not
+    _share_a_group(client, a, c)  # C is A's contact (for the people ref)
+    _candidates(client, browser_id=a)  # reconcile contacts so refs resolve
+
+    tag = uuid.uuid4().hex[:6]
+    open_act, crew_act, bff_act, noc_act = (
+        f"Open {tag}", f"Crew {tag}", f"BFF {tag}", f"NoCal {tag}",
+    )
+    day = _day(1)
+    r = _create_slot(
+        client,
+        browser_id=a,
+        day_time_windows=_dtw(day),
+        activities=[
+            {"name": open_act},
+            {"name": crew_act, "who_with": [{"groups": [{"id": g1, "name": "Crew"}]}]},
+            {"name": bff_act, "who_with": [{"people": [{"id": c_uid, "name": "Cal"}]}]},
+            {"name": noc_act, "who_with": [{"exclude_people": [{"id": c_uid, "name": "Cal"}]}]},
+        ],
+    )
+    assert r.status_code == 200, r.text
+
+    # B (in the crew group, not excluded): Open + Crew + NoCal, never BFF.
+    b_names = _all_suggested_names(_suggestions(client, browser_id=b, day_time_windows=_dtw(day)))
+    assert {open_act, crew_act, noc_act} <= b_names and bff_act not in b_names
+    # C (named in BFF's With, named in NoCal's Without, not in the crew).
+    c_names = _all_suggested_names(_suggestions(client, browser_id=c, day_time_windows=_dtw(day)))
+    assert {open_act, bff_act} <= c_names
+    assert crew_act not in c_names and noc_act not in c_names
+    # An anonymous stranger: only unconditioned activities (can't satisfy a
+    # With list, can't be named by a Without list).
+    d_names = _all_suggested_names(
+        _suggestions(client, browser_id=str(uuid.uuid4()), day_time_windows=_dtw(day)),
+    )
+    assert {open_act, noc_act} <= d_names
+    assert crew_act not in d_names and bff_act not in d_names
+
+
 def test_who_with_candidates_list_contacts(client):
     """People come from the caller's address book — the same population the
     invite-members picker uses — and the endpoint reconciles inline, so someone

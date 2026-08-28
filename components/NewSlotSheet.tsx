@@ -1088,13 +1088,6 @@ export default function NewSlotSheet() {
                   Preferred Start Times
                 </label>
                 <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
-                  <p className="mb-2 text-xs text-gray-400 dark:text-gray-500">
-                    Tap a start time:{" "}
-                    <span className="text-green-600 dark:text-green-400 font-medium">like</span>
-                    {" → "}
-                    <span className="text-red-500 dark:text-red-400 font-medium">dislike</span>
-                    {" → clear. Events aim for everyone's liked times."}
-                  </p>
                   <TimeSlotBubbles
                     options={prefOptions}
                     likedSlots={likedPrefKeys}

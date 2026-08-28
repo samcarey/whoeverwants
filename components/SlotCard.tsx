@@ -380,8 +380,11 @@ function SlotCardImpl({
           </div>
         </div>
         {/* pl-3 is the gutter between the two columns — the circles pack out
-            to the cluster's edge, so the time text needs the room. */}
-        <div className="flex-1 min-w-0 flex items-center justify-center pl-3 py-1">
+            to the cluster's edge, so the time text needs the room. Column
+            layout: the activity cluster, then (when there's anything to act
+            on) the Suggested chip beneath it — confined to THIS column, the
+            interests side, since it's about interests. */}
+        <div className="flex-1 min-w-0 flex flex-col items-center justify-center gap-2 pl-3 py-1">
           {/* Every circle is absolutely placed from the hex layout, so the box
               only has to reserve the cluster's measured size. */}
           <div
@@ -432,40 +435,29 @@ function SlotCardImpl({
               </svg>
             </button>
           </div>
+          {/* Activities OTHERS (whose who-with admits you) are planning
+              during this period: a little rounded card with NO outline (the
+              timeline's tinted surface lifts it off the slot's white), ICONS
+              only — the names live in the modal it opens, where add (+) /
+              silence (✕) act immediately. It only exists while something is
+              left to act on — everything added or silenced → gone. */}
+          {suggested.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onOpenSuggested(slot)}
+              aria-label="Suggested activities"
+              className="flex max-w-full items-center gap-1 rounded-2xl bg-[var(--playlist-surface)] px-2.5 py-1 active:opacity-80 transition-opacity"
+            >
+              <span className="shrink-0 text-[9.5px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                Suggested
+              </span>
+              <span className="min-w-0 truncate text-[15px] leading-none">
+                {suggested.map((s) => activitySymbol(s.name, s.emoji ?? null)).join(" ")}
+              </span>
+            </button>
+          )}
         </div>
       </div>
-      {/* Activities OTHERS are planning during this period, previewed at the
-          bottom of the slot in a little rounded card with NO outline (the
-          timeline's tinted surface lifts it off the slot's white). Tapping it
-          opens the full list with add (+) / silence (✕). It only exists while
-          something is left to act on — everything added or silenced → gone. */}
-      {suggested.length > 0 && (
-        <button
-          type="button"
-          onClick={() => onOpenSuggested(slot)}
-          aria-label="Suggested activities"
-          className="mt-1.5 flex w-full items-baseline gap-2 rounded-2xl bg-[var(--playlist-surface)] px-3 py-1.5 text-left active:opacity-80 transition-opacity"
-        >
-          <span className="shrink-0 text-[10.5px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-            Suggested
-          </span>
-          <span className="min-w-0 flex-1 truncate text-[12.5px] text-gray-600 dark:text-gray-300">
-            {suggested
-              .map((s) => `${s.emoji ? `${s.emoji} ` : ""}${s.name}`)
-              .join("  ·  ")}
-          </span>
-          <svg
-            className="w-3.5 h-3.5 shrink-0 self-center text-gray-400 dark:text-gray-500"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-      )}
     </div>
   );
 }

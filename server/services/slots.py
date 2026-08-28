@@ -588,6 +588,54 @@ def who_with_candidates(conn, *, user_id: str | None) -> list[dict]:
 # Suggestions
 # ----------------------------------------------------------------------------
 
+def _viewer_group_ids(conn, user_id: str | None) -> set[str]:
+    """Every group id the viewer belongs to, account-aware (unions the
+    browsers linked to their account — the load_user_visibility pattern).
+    Used to test a suggester's who-with group refs against the viewer."""
+    if not user_id:
+        return set()
+    rows = conn.execute(
+        """
+        SELECT DISTINCT gm.group_id
+          FROM group_members gm
+         WHERE gm.browser_id IN (
+                 SELECT browser_id FROM user_browsers WHERE user_id = %(u)s::uuid
+               )
+        """,
+        {"u": user_id},
+    ).fetchall()
+    return {str(r["group_id"]) for r in rows}
+
+
+def _admits_viewer(who_with, viewer_id: str | None, viewer_groups: set[str]) -> bool:
+    """Would the activity's owner do it WITH the viewer? Another user's
+    activity is only worth suggesting when its who-with condition admits the
+    viewer: they're not in the Without lists, and the With lists (when any
+    are set) claim them — directly or via a group they're in. Mirrors the
+    events engine's `_allows`; only id-bearing refs participate (name-only
+    picks are display-only, no identity to match). No condition = Anyone.
+    An anonymous viewer (no account) can never satisfy a With list and can
+    never be named by a Without list."""
+    entry = (who_with or [None])[0]
+    if not isinstance(entry, dict):
+        return True
+
+    def ids(field: str) -> set[str]:
+        return {r["id"] for r in entry.get(field) or [] if isinstance(r, dict) and r.get("id")}
+
+    if viewer_id and viewer_id in ids("exclude_people"):
+        return False
+    if viewer_groups & ids("exclude_groups"):
+        return False
+    include_people = ids("people")
+    include_groups = ids("groups")
+    if not include_people and not include_groups:
+        return True
+    if viewer_id and viewer_id in include_people:
+        return True
+    return bool(viewer_groups & include_groups)
+
+
 def _rank(rows: list[dict]) -> list[dict]:
     """rows: [{key, display, emoji, count, last}] → [{name, emoji}] ordered by
     count desc then recency desc, capped."""
@@ -606,13 +654,17 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
     selected_days = list(selection.keys())
 
     blacklisted = get_blacklist_keys(conn, user_id) if user_id else set()
+    # Another user's activity only surfaces when its who-with ADMITS the
+    # viewer (see _admits_viewer) — someone planning "poker, only with my
+    # crew" shouldn't advertise poker to strangers.
+    viewer_groups = _viewer_group_ids(conn, user_id)
 
     # --- Group 1: other users' OVERLAPPING slots -------------------------
     overlap_map: dict[str, dict] = {}
     if selected_days:
         cand = conn.execute(
             """
-            SELECT s.id, s.day_time_windows, sa.activity, sa.emoji, sa.created_at
+            SELECT s.id, s.day_time_windows, sa.activity, sa.emoji, sa.who_with, sa.created_at
               FROM slots s
               JOIN slot_activities sa ON sa.slot_id = s.id
              WHERE (%(uid)s::uuid IS NULL OR s.user_id <> %(uid)s::uuid)
@@ -630,6 +682,8 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
             if sid not in overlap_cache:
                 overlap_cache[sid] = _periods_overlap(selection, _windows_by_day(r["day_time_windows"]))
             if not overlap_cache[sid]:
+                continue
+            if not _admits_viewer(r["who_with"], user_id, viewer_groups):
                 continue
             _accumulate(overlap_map, r["activity"], r["emoji"], r["created_at"], blacklisted)
 
@@ -652,7 +706,7 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
     others_map: dict[str, dict] = {}
     rows = conn.execute(
         """
-        SELECT sa.activity, sa.emoji, sa.created_at
+        SELECT sa.activity, sa.emoji, sa.who_with, sa.created_at
           FROM slot_activities sa
           JOIN slots s ON s.id = sa.slot_id
          WHERE (%(uid)s::uuid IS NULL OR s.user_id <> %(uid)s::uuid)
@@ -660,6 +714,8 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
         {"uid": user_id},
     ).fetchall()
     for r in rows:
+        if not _admits_viewer(r["who_with"], user_id, viewer_groups):
+            continue
         _accumulate(
             others_map, r["activity"], r["emoji"], r["created_at"], blacklisted,
             skip_keys=set(overlap_map.keys()) | set(yours_map.keys()),

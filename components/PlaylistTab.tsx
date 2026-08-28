@@ -490,15 +490,11 @@ export default function PlaylistTab() {
               className="pointer-events-auto w-full max-w-sm rounded-3xl bg-white dark:bg-gray-800 p-4 shadow-2xl"
               role="dialog"
               aria-modal="true"
-              aria-label="Suggested activities"
+              aria-label="Activities interests of others"
             >
               <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                Suggested activities
+                Activities interests of others
               </h2>
-              <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
-                Others are planning these during your slot. Add one to join in, or silence it so
-                it&apos;s never suggested again.
-              </p>
               <ul className="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
                 {suggestList.map((s) => (
                   <li key={suggKey(s.name)} className="flex items-center gap-2 py-2.5">
