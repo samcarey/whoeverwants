@@ -22,9 +22,14 @@ import {
   apiGetSlotEvents,
   getCachedSlotEvents,
   apiSetEventConfirmation,
+  apiGetActivitySuggestions,
+  apiUpdateSlot,
+  type ActivitySuggestion,
   type Slot,
   type SlotEvent,
 } from "@/lib/api/slots";
+import { apiAddActivityBlacklist } from "@/lib/api/users";
+import ModalPortal from "@/components/ModalPortal";
 import { haptic } from "@/lib/haptics";
 import { windowsOverlap } from "@/lib/timeUtils";
 import {
@@ -40,12 +45,16 @@ import {
   SLOT_ADD_PANEL_EVENT,
   PLAYLIST_HEADER_H_VAR,
   openSlotSheet,
+  notifySlotsChanged,
 } from "@/lib/slotEvents";
 import SlotCard from "@/components/SlotCard";
 
 // Stable empty list so rows without events keep reference-equal props (the
 // memo'd SlotCard skips them on every poll tick).
 const NO_EVENTS: SlotEvent[] = [];
+const NO_SUGGESTIONS: ActivitySuggestion[] = [];
+
+const suggKey = (name: string) => name.trim().toLowerCase();
 
 
 export default function PlaylistTab() {
@@ -73,6 +82,36 @@ export default function PlaylistTab() {
     return () => window.removeEventListener(SLOT_ADD_PANEL_EVENT, onPanel);
   }, []);
 
+  // Activities OTHERS are planning during each slot's period (the suggestion
+  // endpoint's "overlapping" group — already other-users-only and blacklist-
+  // filtered server-side), keyed by slot id. Feeds the "Suggested" preview
+  // card at the bottom of each slot + its add/silence modal. Fetched with the
+  // slots (not the 5s events poll — it changes slowly); a token guards a
+  // stale sweep landing over a newer one.
+  const [suggestedBySlot, setSuggestedBySlot] = useState<Map<string, ActivitySuggestion[]>>(
+    () => new Map(),
+  );
+  // Locally-silenced (blacklisted) activity keys — takes effect immediately,
+  // across every slot, without waiting for the server round-trip.
+  const [silenced, setSilenced] = useState<Set<string>>(() => new Set());
+  // Which slot's suggested-activities modal is open (by id, so a slots
+  // refresh mid-modal keeps it live against the fresh slot object).
+  const [suggestSlotId, setSuggestSlotId] = useState<string | null>(null);
+  const suggTokenRef = useRef(0);
+
+  const loadSuggested = useCallback(async (slotList: Slot[]) => {
+    const token = ++suggTokenRef.current;
+    const results = await Promise.all(
+      slotList.map((s) =>
+        apiGetActivitySuggestions(s.day_time_windows)
+          .then((r) => [s.id, r.overlapping] as const)
+          .catch(() => [s.id, NO_SUGGESTIONS] as const),
+      ),
+    );
+    if (suggTokenRef.current !== token) return;
+    setSuggestedBySlot(new Map(results));
+  }, []);
+
   const loadEvents = useCallback(async () => {
     try {
       const next = await apiGetSlotEvents();
@@ -91,12 +130,13 @@ export default function PlaylistTab() {
       const next = await apiListSlots();
       setSlots(next);
       setError(false);
+      void loadSuggested(next);
     } catch {
       setSlots((prev) => prev ?? []);
       setError(true);
     }
     void loadEvents();
-  }, [loadEvents]);
+  }, [loadEvents, loadSuggested]);
 
   useEffect(() => {
     void load();
@@ -202,6 +242,86 @@ export default function PlaylistTab() {
     }
     return map;
   }, [events, entries]);
+
+  // Per-slot VISIBLE suggestions: the fetched overlapping group minus
+  // activities already on the slot and anything silenced this session.
+  // Memoized so the per-card arrays keep identity across unrelated
+  // re-renders (the events poll) — SlotCard is memo'd on shallow props.
+  const visibleSuggestedBySlot = useMemo(() => {
+    const map = new Map<string, ActivitySuggestion[]>();
+    for (const s of slots ?? []) {
+      const raw = suggestedBySlot.get(s.id);
+      if (!raw || raw.length === 0) continue;
+      const taken = new Set(s.activities.map((a) => suggKey(a.name)));
+      const kept = raw.filter((x) => !taken.has(suggKey(x.name)) && !silenced.has(suggKey(x.name)));
+      if (kept.length > 0) map.set(s.id, kept);
+    }
+    return map;
+  }, [slots, suggestedBySlot, silenced]);
+
+  // The Suggested card renders once per SLOT (on its last window row), not
+  // once per window.
+  const lastEntryKeyBySlot = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of entries) map.set(e.slot.id, e.key);
+    return map;
+  }, [entries]);
+
+  const openSuggested = useCallback((slot: Slot) => {
+    haptic.light();
+    setSuggestSlotId(slot.id);
+  }, []);
+
+  // The modal's live view of its slot + list (a slots refresh mid-modal
+  // swaps in the fresh objects).
+  const suggestSlot = suggestSlotId ? (slots ?? []).find((s) => s.id === suggestSlotId) ?? null : null;
+  const suggestList = suggestSlot ? visibleSuggestedBySlot.get(suggestSlot.id) ?? NO_SUGGESTIONS : NO_SUGGESTIONS;
+
+  // Everything acted on (or gone) → the modal closes itself, mirroring the
+  // card's disappearance.
+  useEffect(() => {
+    if (suggestSlotId !== null && suggestList.length === 0) setSuggestSlotId(null);
+  }, [suggestSlotId, suggestList.length]);
+
+  // Escape closes the modal.
+  useEffect(() => {
+    if (suggestSlotId === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSuggestSlotId(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [suggestSlotId]);
+
+  // + adds the activity to the slot IMMEDIATELY (no confirm): optimistic
+  // append into local slots state (which also drops it from the visible
+  // suggestions via the taken-filter), then persist + refresh.
+  const [mutatingSuggest, setMutatingSuggest] = useState(false);
+  const addSuggested = useCallback(
+    (slot: Slot, s: ActivitySuggestion) => {
+      if (mutatingSuggest) return;
+      haptic.success();
+      const activities = [...slot.activities, { name: s.name, emoji: s.emoji ?? null }];
+      setSlots((prev) =>
+        prev ? prev.map((x) => (x.id === slot.id ? { ...x, activities } : x)) : prev,
+      );
+      setMutatingSuggest(true);
+      apiUpdateSlot(slot.id, slot.day_time_windows, activities)
+        .then(() => notifySlotsChanged())
+        .catch(() => void load())
+        .finally(() => setMutatingSuggest(false));
+    },
+    [mutatingSuggest, load],
+  );
+
+  // ✕ silences the activity IMMEDIATELY: never suggested to this account
+  // again (the existing blacklist — manageable under Settings → Blocked
+  // activities).
+  const silenceSuggested = useCallback((s: ActivitySuggestion) => {
+    haptic.medium();
+    setSilenced((prev) => new Set(prev).add(suggKey(s.name)));
+    void apiAddActivityBlacklist(s.name).catch(() => {});
+  }, []);
 
   if (slots === null) {
     return (
@@ -342,11 +462,78 @@ export default function PlaylistTab() {
                 events={eventsByEntryKey.get(e.key) ?? NO_EVENTS}
                 onConfirm={confirmEvent}
                 onOpenEvent={openEvent}
+                suggested={
+                  lastEntryKeyBySlot.get(e.slot.id) === e.key
+                    ? visibleSuggestedBySlot.get(e.slot.id) ?? NO_SUGGESTIONS
+                    : NO_SUGGESTIONS
+                }
+                onOpenSuggested={openSuggested}
               />
             ))}
           </div>
         </div>
       ))}
+
+      {/* The suggested-activities modal: everything others are planning
+          during this slot's period, each with add (+) and silence (✕) —
+          both take effect IMMEDIATELY (no confirm step). Empties itself
+          closed; the card on the slot disappears with it. */}
+      {suggestSlot && suggestList.length > 0 && (
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[69] bg-black/40 dark:bg-black/60 animate-fade-in"
+            onClick={() => setSuggestSlotId(null)}
+            aria-hidden="true"
+          />
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-none">
+            <div
+              className="pointer-events-auto w-full max-w-sm rounded-3xl bg-white dark:bg-gray-800 p-4 shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Suggested activities"
+            >
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Suggested activities
+              </h2>
+              <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                Others are planning these during your slot. Add one to join in, or silence it so
+                it&apos;s never suggested again.
+              </p>
+              <ul className="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
+                {suggestList.map((s) => (
+                  <li key={suggKey(s.name)} className="flex items-center gap-2 py-2.5">
+                    <span className="min-w-0 flex-1 truncate text-base text-gray-800 dark:text-gray-100">
+                      {s.emoji ? `${s.emoji} ` : ""}
+                      {s.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => silenceSuggested(s)}
+                      aria-label={`Silence "${s.name}"`}
+                      className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addSuggested(suggestSlot, s)}
+                      disabled={mutatingSuggest}
+                      aria-label={`Add "${s.name}"`}
+                      className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-600 text-white active:bg-blue-700 disabled:opacity-50"
+                    >
+                      <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
     </div>
   );
 }

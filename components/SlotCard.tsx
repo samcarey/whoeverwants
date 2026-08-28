@@ -29,7 +29,7 @@
 
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import InitialBubble from "@/components/InitialBubble";
-import type { Slot, SlotEvent } from "@/lib/api/slots";
+import type { ActivitySuggestion, Slot, SlotEvent } from "@/lib/api/slots";
 import {
   activityColor,
   clusterLayout,
@@ -53,6 +53,13 @@ interface SlotCardProps {
   onConfirm: (ev: SlotEvent) => void;
   /** Open the event's own page. */
   onOpenEvent: (ev: SlotEvent) => void;
+  /** Activities OTHERS are planning during this slot's period that aren't on
+   *  the slot yet (already blacklist-filtered). Non-empty → the "Suggested"
+   *  preview card at the bottom of the slot. Reference-stable when unchanged,
+   *  for the memo. */
+  suggested: ActivitySuggestion[];
+  /** Open the suggested-activities modal (add / silence live there). */
+  onOpenSuggested: (slot: Slot) => void;
 }
 
 /** "HH:MM" → a compact 12h clock ("2 PM", "2:30 PM"). */
@@ -252,7 +259,16 @@ function activitySymbol(name: string, emoji: string | null): string {
   return emoji || name.trim().charAt(0).toUpperCase() || "?";
 }
 
-function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: SlotCardProps) {
+function SlotCardImpl({
+  slot,
+  line,
+  colors,
+  events,
+  onConfirm,
+  onOpenEvent,
+  suggested,
+  onOpenSuggested,
+}: SlotCardProps) {
   // Resolve each activity's color once (stable per activity name across the
   // whole timeline — see buildActivityColorMap).
   const activities = slot.activities.map((a) => ({
@@ -418,6 +434,38 @@ function SlotCardImpl({ slot, line, colors, events, onConfirm, onOpenEvent }: Sl
           </div>
         </div>
       </div>
+      {/* Activities OTHERS are planning during this period, previewed at the
+          bottom of the slot in a little rounded card with NO outline (the
+          timeline's tinted surface lifts it off the slot's white). Tapping it
+          opens the full list with add (+) / silence (✕). It only exists while
+          something is left to act on — everything added or silenced → gone. */}
+      {suggested.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onOpenSuggested(slot)}
+          aria-label="Suggested activities"
+          className="mt-1.5 flex w-full items-baseline gap-2 rounded-2xl bg-[var(--playlist-surface)] px-3 py-1.5 text-left active:opacity-80 transition-opacity"
+        >
+          <span className="shrink-0 text-[10.5px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            Suggested
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[12.5px] text-gray-600 dark:text-gray-300">
+            {suggested
+              .map((s) => `${s.emoji ? `${s.emoji} ` : ""}${s.name}`)
+              .join("  ·  ")}
+          </span>
+          <svg
+            className="w-3.5 h-3.5 shrink-0 self-center text-gray-400 dark:text-gray-500"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
