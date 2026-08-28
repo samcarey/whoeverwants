@@ -1,0 +1,11 @@
+-- Per-activity preferred start times (migration 154).
+--
+-- A slot activity can carry the owner's start-time preferences within the
+-- slot's availability window, mirroring the time-poll like/dislike ballot:
+--   {"liked": ["18:00", "18:30"], "disliked": ["21:00"]}
+-- Times are HH:MM start marks (day-agnostic — a slot is a single day).
+-- Decoupled from the activity name, like emoji / who_with: never affects
+-- suggestion matching or the blacklist. The slot-events engine folds these
+-- into its "@ time" pick (fewest dislikes -> most likes -> earliest) instead
+-- of always proposing the earliest viable start.
+ALTER TABLE slot_activities ADD COLUMN IF NOT EXISTS time_prefs JSONB;

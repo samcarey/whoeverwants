@@ -43,12 +43,23 @@ export interface WhoWithEntry {
   exclude_people?: WhoWithRef[] | null;
 }
 
+/** Preferred / avoided start times within the slot's window, as HH:MM start
+ *  marks (day-agnostic — a slot is one day). The events engine picks a
+ *  party's "@ time" by fewest dislikes → most likes → earliest, so an event
+ *  lands on a preferred time rather than always the earliest viable one. */
+export interface TimePrefs {
+  liked: string[];
+  disliked: string[];
+}
+
 export interface SlotActivity extends ActivitySuggestion {
   min_people?: number | null;
   max_people?: number | null;
   /** Multiple participant ranges, each with its own groups/people. Empty =
    *  the activity-level range with "Anyone". */
   who_with?: WhoWithEntry[] | null;
+  /** Start-time preferences (see TimePrefs); null = no preference. */
+  time_prefs?: TimePrefs | null;
 }
 
 export interface ActivitySuggestions {

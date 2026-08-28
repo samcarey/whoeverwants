@@ -10,8 +10,9 @@ import psycopg
 from services.auth import generate_token, hash_token, normalize_email
 from services.slot_events import (
     _Candidate,
-    _earliest_viable_start,
+    _best_start,
     _intersect,
+    _preferred_viable_start,
     _set_ok,
 )
 from tests.conftest import TEST_DB_URL, bid_headers
@@ -152,8 +153,8 @@ def test_set_ok_needs_a_common_window():
 def test_viable_with_reaches_minimum_via_third_person():
     a = _cand("a", min_people=3)
     b, c = _cand("b"), _cand("c")
-    assert _earliest_viable_start(a, [b], {}) is None
-    assert _earliest_viable_start(a, [b, c], {}) == 540
+    assert _preferred_viable_start(a, [b], {}) is None
+    assert _preferred_viable_start(a, [b, c], {}) == 540
 
 
 def test_earliest_viable_start_is_the_min_headcount_time():
@@ -163,10 +164,42 @@ def test_earliest_viable_start_is_the_min_headcount_time():
     a = _cand("a", windows=[(540, 1020)])
     b = _cand("b", windows=[(540, 1020)], min_people=2)
     c = _cand("c", windows=[(720, 1020)])
-    assert _earliest_viable_start(a, [b, c], {}) == 540
+    assert _preferred_viable_start(a, [b, c], {}) == 540
     # Force the trio (b needs 3) → the common window shifts to noon.
     b.min_people = 3
-    assert _earliest_viable_start(a, [b, c], {}) == 720
+    assert _preferred_viable_start(a, [b, c], {}) == 720
+
+
+def test_liked_start_beats_earliest():
+    """A liked mark inside the common window wins over the bare window start —
+    the whole point of per-activity time preferences."""
+    a = _cand("a", liked={840})  # 14:00
+    b = _cand("b")
+    assert _preferred_viable_start(a, [b], {}) == 840
+
+
+def test_disliked_window_start_is_escaped():
+    """When the earliest start is somebody's disliked mark, the pick steps to
+    the next non-disliked candidate rather than landing on it."""
+    a = _cand("a", disliked={540})  # dislikes 9:00, the window start
+    b = _cand("b")
+    # 9:30 (disliked + one step) scores (0 dislikes) over 9:00's (1 dislike).
+    assert _preferred_viable_start(a, [b], {}) == 570
+
+
+def test_likes_outvote_a_single_dislike_only_when_clean():
+    """Fewest dislikes is the primary key (the time-poll winner rule): a start
+    two people like but one dislikes loses to a clean liked start."""
+    a = _cand("a", liked={840, 900})
+    b = _cand("b", liked={840}, disliked=set())
+    c = _cand("c", disliked={840})
+    # 840 has 2 likes but 1 dislike; 900 has 1 like, 0 dislikes → 900 wins.
+    assert _best_start([a, b, c], [(540, 1020)]) == 900
+
+
+def test_no_preferences_reduce_to_earliest():
+    a, b = _cand("a"), _cand("b")
+    assert _best_start([a, b], [(540, 1020)]) == 540
 
 
 # --- API ---------------------------------------------------------------------
@@ -200,6 +233,27 @@ def test_two_overlapping_slots_propose_an_event_and_meet_on_two_confirms(client)
     assert r.json()["time"] == "10:00"
     # And A sees the met state too.
     assert _events(client, browser_id=a)[0]["met"]
+
+
+def test_time_prefs_move_the_proposed_time(client):
+    """A liked start inside the overlap pulls the card's "@ time" off the bare
+    window start — end-to-end through the time_prefs column."""
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    day = _day(1)
+    act = _act("Frisbee")
+    _create_slot(
+        client,
+        browser_id=a,
+        day_time_windows=_dtw(day, "09:00", "17:00"),
+        activities=[{"name": act, "time_prefs": {"liked": ["14:00"], "disliked": []}}],
+    )
+    _create_slot(client, browser_id=b, day_time_windows=_dtw(day, "10:00", "16:00"), activities=[act])
+    assert _events(client, browser_id=a)[0]["time"] == "14:00"
+    # The met set's time honors the preference too.
+    _confirm(client, browser_id=a, day=day, activity=act)
+    r = _confirm(client, browser_id=b, day=day, activity=act)
+    assert r.status_code == 200 and r.json()["met"]
+    assert r.json()["time"] == "14:00"
 
 
 def test_non_overlapping_windows_propose_nothing(client):

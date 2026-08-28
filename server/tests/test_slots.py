@@ -195,6 +195,31 @@ def test_activity_participant_range_round_trips(client):
     assert (by_name["Walk"]["min_people"], by_name["Walk"]["max_people"]) == (None, None)
 
 
+def test_activity_time_prefs_round_trip_and_sanitize(client):
+    bid = str(uuid.uuid4())
+    _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw(_day(1), "17:00", "22:00"),
+        activities=[
+            {
+                "name": "Frisbee",
+                "time_prefs": {
+                    # "18:00" is both liked and disliked → disliked wins;
+                    # "25:99" is not a real time → dropped.
+                    "liked": ["18:00", "18:30", "18:00", "25:99"],
+                    "disliked": ["18:00", "21:00"],
+                },
+            },
+            {"name": "Walk", "time_prefs": {"liked": [], "disliked": []}},  # empty → null
+        ],
+    )
+    s = _list_slots(client, browser_id=bid).json()["slots"][0]
+    by_name = {a["name"]: a for a in s["activities"]}
+    assert by_name["Frisbee"]["time_prefs"] == {"liked": ["18:30"], "disliked": ["18:00", "21:00"]}
+    assert by_name["Walk"]["time_prefs"] is None
+
+
 def test_activity_participant_range_sanitized(client):
     bid = str(uuid.uuid4())
     _create_slot(

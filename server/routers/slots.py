@@ -77,6 +77,15 @@ class WhoWithEntry(BaseModel):
         return v
 
 
+class TimePrefs(BaseModel):
+    # Preferred / avoided start times within the slot's window, as HH:MM marks
+    # (day-agnostic — a slot is a single day). Sanitized (real HH:MM, deduped,
+    # disliked-wins on overlap, capped) in services.slots. The events engine
+    # picks a party's "@ time" by fewest dislikes -> most likes -> earliest.
+    liked: list[str] = []
+    disliked: list[str] = []
+
+
 class ActivityInput(BaseModel):
     name: str
     # Optional per-activity emoji (picked in the create-slot sheet). Decoupled
@@ -91,6 +100,8 @@ class ActivityInput(BaseModel):
     # each with its own groups/people. None/[] = the activity-level range with
     # "Anyone".
     who_with: list[WhoWithEntry] | None = None
+    # Optional per-activity start-time preferences (see TimePrefs).
+    time_prefs: TimePrefs | None = None
 
 
 class CreateSlotRequest(BaseModel):
@@ -117,6 +128,7 @@ class SlotActivity(BaseModel):
     min_people: int | None = None
     max_people: int | None = None
     who_with: list[WhoWithEntry] | None = None
+    time_prefs: TimePrefs | None = None
 
 
 class SlotResponse(BaseModel):

@@ -56,7 +56,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from services.slots import _windows_by_day, normalize_activity
+from services.slots import _hhmm_to_minutes, _windows_by_day, normalize_activity
 
 # Beyond this many viewer-compatible candidates the exists-a-viable-subset
 # search stops being cheap (2^n subsets); extras beyond the cap are dropped
@@ -84,6 +84,12 @@ class _Candidate:
     include_people: set[str] = field(default_factory=set)
     exclude_groups: set[str] = field(default_factory=set)
     exclude_people: set[str] = field(default_factory=set)
+    # Preferred / avoided start times (minutes since midnight), from the
+    # freshest activity row's time_prefs. The "@ time" pick scores candidate
+    # starts by fewest dislikes -> most likes -> earliest (the time-poll
+    # winner rule); all-empty preserves the old earliest-start behavior.
+    liked: set[int] = field(default_factory=set)
+    disliked: set[int] = field(default_factory=set)
 
     @property
     def has_include(self) -> bool:
@@ -98,6 +104,21 @@ def _ref_ids(refs) -> set[str]:
         if isinstance(r, dict) and r.get("id"):
             out.add(str(r["id"]))
     return out
+
+
+def _apply_time_prefs(cand: _Candidate, time_prefs) -> None:
+    """Fold an activity row's start-time preferences into the candidate
+    (freshest row wins, like the who-with condition)."""
+    liked: set[int] = set()
+    disliked: set[int] = set()
+    if isinstance(time_prefs, dict):
+        for field_name, acc in (("liked", liked), ("disliked", disliked)):
+            for v in time_prefs.get(field_name) or []:
+                mins = _hhmm_to_minutes(v) if isinstance(v, str) else None
+                if mins is not None:
+                    acc.add(mins)
+    cand.liked = liked
+    cand.disliked = disliked
 
 
 def _apply_condition(cand: _Candidate, activity_row: dict) -> None:
@@ -193,18 +214,56 @@ def _set_ok(
     )
 
 
-def _earliest_viable_start(
+# The bubble pitch of the start-preference ballot — a disliked mark "escapes"
+# to the next bubble over when nothing better is available.
+PREF_STEP = 30
+
+
+def _start_candidates(cands: list[_Candidate], commons: list[tuple[int, int]]) -> list[int]:
+    """The start minutes worth scoring within the shared windows: each window's
+    own start (the old earliest-start behavior), every member's liked mark
+    (something to move TOWARD), and one step past every disliked mark
+    (somewhere to escape a disliked window start to)."""
+    out: set[int] = set()
+    marks: set[int] = set()
+    for c in cands:
+        marks |= c.liked
+        marks |= {d + PREF_STEP for d in c.disliked}
+    for lo, hi in commons:
+        out.add(lo)
+        out.update(m for m in marks if lo <= m < hi)
+    return sorted(out)
+
+
+def _start_score(start: int, cands: list[_Candidate]) -> tuple[int, int, int]:
+    """Rank a candidate start for this set: fewest dislikes, then most likes,
+    then earliest — the time-poll winner rule. Lower tuple = better."""
+    dislikes = sum(1 for c in cands if start in c.disliked)
+    likes = sum(1 for c in cands if start in c.liked)
+    return (dislikes, -likes, start)
+
+
+def _best_start(cands: list[_Candidate], commons: list[tuple[int, int]]) -> int | None:
+    """The best-scoring start the set shares; None when no common window."""
+    starts = _start_candidates(cands, commons)
+    if not starts:
+        return None
+    return min(starts, key=lambda s: _start_score(s, cands))
+
+
+def _preferred_viable_start(
     viewer: _Candidate,
     others: list[_Candidate],
     members: dict[str, set[str]],
 ) -> int | None:
-    """The earliest minute at which SOME subset containing the viewer (size ≥
+    """The best start minute at which SOME subset containing the viewer (size ≥
     MIN_EVENT_PEOPLE, everyone's condition holding — minimums included) could
     gather; None when no such subset exists (→ the event isn't proposed).
     Pre-filters to candidates mutually compatible with the viewer (a member of
-    a valid set must be), then brute-forces subsets, keeping the earliest
-    common-window start across every viable one — "the earliest time that
-    allows the minimum amount of people to attend"."""
+    a valid set must be), then brute-forces subsets, scoring each viable one's
+    candidate starts by the members' time preferences (fewest dislikes → most
+    likes → earliest); with no preferences anywhere this reduces to the old
+    "earliest time that allows the minimum amount of people to attend"."""
     pool = [
         o
         for o in others
@@ -212,7 +271,8 @@ def _earliest_viable_start(
         and _allows(o, viewer.user_id, members)
         and _intersect(viewer.windows, o.windows)
     ][: MAX_SEARCH_CANDIDATES - 1]
-    earliest: int | None = None
+    best: tuple[int, int, int] | None = None
+    best_start: int | None = None
     for mask in range(1, 1 << len(pool)):
         subset = [viewer] + [o for i, o in enumerate(pool) if mask >> i & 1]
         if len(subset) < MIN_EVENT_PEOPLE:
@@ -222,10 +282,12 @@ def _earliest_viable_start(
         commons = _common_windows(subset)
         if not commons:
             continue
-        start = min(w[0] for w in commons)
-        if earliest is None or start < earliest:
-            earliest = start
-    return earliest
+        for start in _start_candidates(subset, commons):
+            score = _start_score(start, subset)
+            if best is None or score < best:
+                best = score
+                best_start = start
+    return best_start
 
 
 # ----------------------------------------------------------------------------
@@ -242,7 +304,7 @@ def _gather_days(conn, days: list[str]) -> dict[tuple[str, str], dict[str, _Cand
         """
         SELECT s.user_id, u.display_name, s.day_time_windows,
                sa.activity, sa.emoji, sa.min_people, sa.max_people,
-               sa.who_with, sa.created_at
+               sa.who_with, sa.time_prefs, sa.created_at
           FROM slots s
           JOIN slot_activities sa ON sa.slot_id = s.id
           JOIN users u ON u.id = s.user_id
@@ -286,6 +348,7 @@ def _gather_days(conn, days: list[str]) -> dict[tuple[str, str], dict[str, _Cand
                         "max_people": r["max_people"],
                     },
                 )
+                _apply_time_prefs(cand, r["time_prefs"])
     return events
 
 
@@ -366,7 +429,7 @@ def _party_payload(
     viewer_confirmed = viewer_id in {c.user_id for c in confirmed}
     pool_ids = ({c.user_id for c in confirmed} | unattached) - {viewer_id}
     pool = [cands[u] for u in pool_ids]
-    earliest_viable = _earliest_viable_start(viewer, pool, members)
+    earliest_viable = _preferred_viable_start(viewer, pool, members)
     if party_id is None and earliest_viable is None:
         return None
 
@@ -381,13 +444,12 @@ def _party_payload(
         confirmed, members, require_min=True
     )
 
-    # The "@ time" on the card: once the event is ON it's when the people
-    # actually going can all start; until then it's the earliest start any
-    # viable group containing the viewer could manage — the earliest time
-    # that lets everyone's minimum be met.
+    # The "@ time" on the card: once the event is ON it's the best-preferred
+    # start the people actually going all share; until then it's the
+    # best-preferred start any viable group containing the viewer could
+    # manage (falling back to earliest when nobody marked preferences).
     if met:
-        commons = _common_windows(confirmed)
-        time_min = min(w[0] for w in commons) if commons else None
+        time_min = _best_start(confirmed, _common_windows(confirmed))
     else:
         time_min = earliest_viable
 
@@ -599,7 +661,7 @@ def set_confirmation(
                     break
             if target is None:
                 pool = [cands[u] for u in unattached - {user_id}]
-                if _earliest_viable_start(cands[user_id], pool, members) is None:
+                if _preferred_viable_start(cands[user_id], pool, members) is None:
                     raise EventFullError()
                 row = conn.execute(
                     "INSERT INTO slot_events (day, activity) VALUES (%(d)s::date, %(a)s) RETURNING id",

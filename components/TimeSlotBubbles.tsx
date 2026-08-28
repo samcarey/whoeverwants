@@ -56,6 +56,11 @@ interface TimeSlotBubblesProps {
    *  maxAvailability (relative) when not provided. */
   availabilityRespondents?: number;
   disabled?: boolean;
+  /** z-index class for the floating range-selection toolbar. Default z-50 is
+   *  fine on a page; a host inside a higher-stacked sheet (the slot activity
+   *  editor at z-60) must pass something above itself or the toolbar hides
+   *  behind it. */
+  toolbarZClassName?: string;
 }
 
 export default function TimeSlotBubbles({
@@ -67,6 +72,7 @@ export default function TimeSlotBubbles({
   maxAvailability,
   availabilityRespondents,
   disabled = false,
+  toolbarZClassName = "z-50",
 }: TimeSlotBubblesProps) {
   const likedSet = useMemo(() => new Set(likedSlots), [likedSlots]);
   const dislikedSet = useMemo(() => new Set(dislikedSlots), [dislikedSlots]);
@@ -401,7 +407,7 @@ export default function TimeSlotBubbles({
         <ModalPortal>
           <div
             data-slot-toolbar="true"
-            className="fixed left-1/2 -translate-x-1/2 z-50 animate-slide-up"
+            className={`fixed left-1/2 -translate-x-1/2 ${toolbarZClassName} animate-slide-up`}
             style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
           >
             <div className="flex items-center gap-2 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 shadow-xl">

@@ -41,6 +41,8 @@ PAST_GRACE_HOURS = 14
 SUGGESTIONS_PER_GROUP = 15
 # Sanity bounds on a per-activity participant count (min/max people).
 MAX_PEOPLE = 999
+# Per-activity preferred-start-time caps (silent truncation).
+MAX_TIME_PREFS = 96
 # Per-activity "who with" caps (silent truncation, like COMMENT_MAX_CHARS).
 MAX_WITH_NAMES = 20
 MAX_WITH_NAME_CHARS = 50
@@ -187,6 +189,41 @@ def _clean_who_with(value) -> list[dict] | None:
     return out or None
 
 
+def _clean_time_prefs(value) -> dict | None:
+    """Sanitize a per-activity start-time preference blob:
+    ``{"liked": ["HH:MM", ...], "disliked": ["HH:MM", ...]}``. Times are
+    validated as real HH:MM marks, deduped (a time can't be both — disliked
+    wins, matching the ballot's cycle where dislike is the later state), and
+    capped. Empty both ways → None (no preference — the engine proposes the
+    earliest viable start as before)."""
+    if not isinstance(value, dict):
+        return None
+
+    def clean(field: str) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for v in value.get(field) or []:
+            if not isinstance(v, str):
+                continue
+            mins = _hhmm_to_minutes(v.strip())
+            if mins is None or not 0 <= mins < 1440:
+                continue
+            norm = f"{mins // 60:02d}:{mins % 60:02d}"
+            if norm in seen:
+                continue
+            seen.add(norm)
+            out.append(norm)
+            if len(out) >= MAX_TIME_PREFS:
+                break
+        return out
+
+    disliked = clean("disliked")
+    liked = [t for t in clean("liked") if t not in set(disliked)]
+    if not liked and not disliked:
+        return None
+    return {"liked": liked, "disliked": disliked}
+
+
 def _member_group_names(conn, user_id: str) -> dict[str, str]:
     """{group_id: display name} for every group the account is a member of.
 
@@ -304,11 +341,12 @@ def _insert_slot_activities(conn, slot_id: str, activities, *, user_id: str) -> 
             if ref_maps is None:
                 ref_maps = (_member_group_names(conn, user_id), _contact_names(conn, user_id))
             who_with = _resolve_who_with(who_with, *ref_maps)
+        time_prefs = _clean_time_prefs(raw.get("time_prefs"))
         conn.execute(
             """
             INSERT INTO slot_activities
-                (slot_id, activity, emoji, min_people, max_people, who_with)
-            VALUES (%(s)s::uuid, %(a)s, %(e)s, %(mn)s, %(mx)s, %(ww)s::jsonb)
+                (slot_id, activity, emoji, min_people, max_people, who_with, time_prefs)
+            VALUES (%(s)s::uuid, %(a)s, %(e)s, %(mn)s, %(mx)s, %(ww)s::jsonb, %(tp)s::jsonb)
             """,
             {
                 "s": slot_id,
@@ -317,6 +355,7 @@ def _insert_slot_activities(conn, slot_id: str, activities, *, user_id: str) -> 
                 "mn": min_people,
                 "mx": max_people,
                 "ww": json.dumps(who_with) if who_with else None,
+                "tp": json.dumps(time_prefs) if time_prefs else None,
             },
         )
 
@@ -406,7 +445,7 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
     if slot_ids:
         arows = conn.execute(
             """
-            SELECT slot_id, activity, emoji, min_people, max_people, who_with
+            SELECT slot_id, activity, emoji, min_people, max_people, who_with, time_prefs
               FROM slot_activities
              WHERE slot_id = ANY(%(ids)s::uuid[])
              ORDER BY created_at
@@ -421,6 +460,7 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
                     "min_people": a["min_people"],
                     "max_people": a["max_people"],
                     "who_with": a["who_with"] or None,
+                    "time_prefs": a["time_prefs"] or None,
                 }
             )
     return [

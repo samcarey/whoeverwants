@@ -43,6 +43,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DaysSelector from "@/components/DaysSelector";
+import TimeSlotBubbles, { type SlotState } from "@/components/TimeSlotBubbles";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -105,16 +106,19 @@ const EMPTY_ENTRY: EditableEntry = {
 };
 
 /** The ONE activity the sheet is editing: its name, its chosen emoji ("" =
- *  none, picker faded) and its single who-with condition. The editor writes
- *  who_with exclusively — the legacy activity-level range converts into the
+ *  none, picker faded), its single who-with condition, and its start-time
+ *  preferences (HH:MM marks — see TimePrefs). The editor writes who_with
+ *  exclusively — the legacy activity-level range converts into the
  *  condition's range on load. */
 interface ActivityDraft {
   name: string;
   emoji: string;
   entry: EditableEntry;
+  liked: string[];
+  disliked: string[];
 }
 
-const EMPTY_DRAFT: ActivityDraft = { name: "", emoji: "", entry: EMPTY_ENTRY };
+const EMPTY_DRAFT: ActivityDraft = { name: "", emoji: "", entry: EMPTY_ENTRY, liked: [], disliked: [] };
 
 /** Seed the who-with condition from a loaded activity: its FIRST who_with
  *  entry (the editor is single-condition now — a legacy activity with several
@@ -158,6 +162,47 @@ function entryToWire(e: EditableEntry): WhoWithEntry[] {
 }
 
 const nameKey = (s: string) => s.trim().toLowerCase();
+
+// ---- Preferred start times (the time-poll bubble ballot, over the slot's
+// own availability window at 30-minute starts). Preferences are stored as
+// day-agnostic HH:MM start marks; the bubble grid works in full
+// "YYYY-MM-DD HH:MM-HH:MM" slot keys, so these two map between them.
+
+const PREF_STEP_MIN = 30;
+
+const minsOfHHMM = (v: string | undefined): number | null => {
+  if (!v || !v.includes(":")) return null;
+  const [h, m] = v.split(":").map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+};
+const fmtMins = (m: number) => {
+  const mm = ((m % 1440) + 1440) % 1440;
+  return `${String(Math.floor(mm / 60)).padStart(2, "0")}:${String(mm % 60).padStart(2, "0")}`;
+};
+/** A bubble key's start time-of-day ("2026-08-30 18:00-18:30" → "18:00"). */
+const startOfKey = (key: string) => key.split(" ")[1]?.split("-")[0] ?? "";
+
+/** Candidate start-time bubbles across the slot's windows, as slot keys the
+ *  bubble grid understands. Cross-midnight windows (max <= min, the app-wide
+ *  convention) clip at midnight — starts stay within the slot's own day. */
+function prefOptionsForSlot(slot: Slot | null): string[] {
+  if (!slot) return [];
+  const out: string[] = [];
+  for (const dtw of slot.day_time_windows ?? []) {
+    if (!dtw.day) continue;
+    for (const w of dtw.windows ?? []) {
+      const mn = minsOfHHMM(w.min);
+      const mxRaw = minsOfHHMM(w.max);
+      if (mn == null || mxRaw == null) continue;
+      const mx = mxRaw > mn ? mxRaw : 1440;
+      for (let s = mn; s < mx; s += PREF_STEP_MIN) {
+        out.push(`${dtw.day} ${fmtMins(s)}-${fmtMins(s + PREF_STEP_MIN)}`);
+      }
+    }
+  }
+  // Zero-padded keys sort chronologically as strings.
+  return [...new Set(out)].sort();
+}
 
 /** The "Without" field writes the same candidate kinds into the exclude_*
  *  lists, so its picks map onto the entry's other pair of name arrays. */
@@ -338,7 +383,13 @@ export default function NewSlotSheet() {
       setActivityIndex(existing ? index : null);
       setDraft(
         existing
-          ? { name: existing.name, emoji: existing.emoji ?? "", entry: entryFromActivity(existing) }
+          ? {
+              name: existing.name,
+              emoji: existing.emoji ?? "",
+              entry: entryFromActivity(existing),
+              liked: existing.time_prefs?.liked ?? [],
+              disliked: existing.time_prefs?.disliked ?? [],
+            }
           : EMPTY_DRAFT,
       );
       setEmojiOpen(false);
@@ -455,6 +506,10 @@ export default function NewSlotSheet() {
         min_people: null,
         max_people: null,
         who_with: entryToWire(d.entry),
+        time_prefs:
+          d.liked.length > 0 || d.disliked.length > 0
+            ? { liked: d.liked, disliked: d.disliked }
+            : null,
       };
       let base: SlotActivity[];
       if (activityIndex !== null) {
@@ -496,6 +551,34 @@ export default function NewSlotSheet() {
     },
     [isAddActivity, draft, saveActivityDraft],
   );
+
+  // The preferred-start-times ballot: 30-min start bubbles over the slot's
+  // own window, cycling neutral → prefer (green) → avoid (red) → neutral —
+  // the time-poll ballot reused. Marks store as day-agnostic HH:MM starts.
+  const prefOptions = useMemo(() => prefOptionsForSlot(editingSlot), [editingSlot]);
+  const likedPrefKeys = useMemo(
+    () => prefOptions.filter((k) => draft.liked.includes(startOfKey(k))),
+    [prefOptions, draft.liked],
+  );
+  const dislikedPrefKeys = useMemo(
+    () => prefOptions.filter((k) => draft.disliked.includes(startOfKey(k))),
+    [prefOptions, draft.disliked],
+  );
+  // FUNCTIONAL update is load-bearing: the bubble grid's bulk-apply toolbar
+  // fires this once per selected key in a synchronous loop (the documented
+  // stale-state trap on ShowtimeBallotSection.toggle).
+  const togglePref = useCallback((slotKey: string, next: SlotState) => {
+    const t = startOfKey(slotKey);
+    if (!t) return;
+    setDraft((prev) => ({
+      ...prev,
+      liked: next === "liked" ? [...prev.liked.filter((x) => x !== t), t] : prev.liked.filter((x) => x !== t),
+      disliked:
+        next === "disliked"
+          ? [...prev.disliked.filter((x) => x !== t), t]
+          : prev.disliked.filter((x) => x !== t),
+    }));
+  }, []);
 
   const patchEntry = useCallback((patch: Partial<EditableEntry>) => {
     setDraft((prev) => ({ ...prev, entry: { ...prev.entry, ...patch } }));
@@ -992,6 +1075,35 @@ export default function NewSlotSheet() {
                 onOpenChange={handlePickerOpenChange}
               />
             </section>
+            )}
+
+            {/* Preferred start times, EDIT MODE ONLY (like who-with): the
+                time-poll bubble ballot over the slot's own window at 30-min
+                starts. Green = prefer, red = avoid; proposed events land on
+                the group's most-preferred viable start instead of always the
+                earliest. The drag-select toolbar rides above the z-60 sheet. */}
+            {!isNewActivity && prefOptions.length > 0 && (
+              <div>
+                <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+                  Preferred Start Times
+                </label>
+                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                  <p className="mb-2 text-xs text-gray-400 dark:text-gray-500">
+                    Tap a start time:{" "}
+                    <span className="text-green-600 dark:text-green-400 font-medium">prefer</span>
+                    {" → "}
+                    <span className="text-red-500 dark:text-red-400 font-medium">avoid</span>
+                    {" → clear. Events aim for everyone's preferred times."}
+                  </p>
+                  <TimeSlotBubbles
+                    options={prefOptions}
+                    likedSlots={likedPrefKeys}
+                    dislikedSlots={dislikedPrefKeys}
+                    onToggle={togglePref}
+                    toolbarZClassName="z-[70]"
+                  />
+                </section>
+              </div>
             )}
 
             </>)}
