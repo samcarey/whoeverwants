@@ -290,6 +290,86 @@ def _preferred_viable_start(
     return best_start
 
 
+def _needed_more(
+    viewer: _Candidate,
+    others: list[_Candidate],
+    members: dict[str, set[str]],
+) -> int | None:
+    """How many MORE people (beyond every compatible candidate who exists)
+    the smallest near-viable gathering including the viewer still needs —
+    the "1 more needed" number. Walks the same compatible-subset space as
+    `_preferred_viable_start`, but for each subset with a shared window and
+    constraints holding (minimums exempt) computes how far short of the
+    binding minimum it falls, skipping subsets whose maximums couldn't fit
+    the extra heads. None when even that fails (no shared window at all —
+    which can't happen for the singleton {viewer} unless their slot has no
+    usable windows)."""
+    pool = [
+        o
+        for o in others
+        if _allows(viewer, o.user_id, members)
+        and _allows(o, viewer.user_id, members)
+        and _intersect(viewer.windows, o.windows)
+    ][: MAX_SEARCH_CANDIDATES - 1]
+    best: int | None = None
+    # From 0: the singleton {viewer} is a legitimate near-miss base — the
+    # common case of "I declared an activity and nobody else has it yet".
+    for mask in range(0, 1 << len(pool)):
+        subset = [viewer] + [o for i, o in enumerate(pool) if mask >> i & 1]
+        if not _constraints_ok(subset, members, require_min=False):
+            continue
+        if not _common_windows(subset):
+            continue
+        n = len(subset)
+        need = max(MIN_EVENT_PEOPLE, max(c.min_people for c in subset)) - n
+        if need <= 0:
+            continue  # viable outright — the fresh card handles it
+        caps = [c.max_people for c in subset if c.max_people is not None]
+        if caps and n + need > min(caps):
+            continue  # the missing heads wouldn't fit someone's maximum
+        if best is None or need < best:
+            best = need
+    return best
+
+
+def _near_miss_payload(
+    day: str,
+    cands: dict[str, _Candidate],
+    viewer_id: str,
+    members: dict[str, set[str]],
+    unattached: set[str],
+) -> dict | None:
+    """The "needs N more" card shown when NO viable gathering exists for the
+    viewer — so a declared activity is never a silent dead end. Not
+    confirmable (there's nothing to join yet); the card just says how close
+    the gathering is."""
+    viewer = cands[viewer_id]
+    pool = [cands[u] for u in unattached - {viewer_id}]
+    need = _needed_more(viewer, pool, members)
+    if need is None:
+        return None
+    window = max(viewer.windows, key=lambda w: w[1] - w[0]) if viewer.windows else None
+    freshest = max(cands.values(), key=lambda c: c.freshest)
+    return {
+        "id": None,
+        "day": day,
+        "activity": viewer.display or freshest.display,
+        "emoji": viewer.emoji or freshest.emoji,
+        "time": None,
+        "window": (
+            {"min": _minutes_to_hhmm(window[0]), "max": _minutes_to_hhmm(window[1])}
+            if window
+            else None
+        ),
+        "confirmed_count": 0,
+        "confirmed_names": [],
+        "viewer_confirmed": False,
+        "can_confirm": False,
+        "met": False,
+        "needed": need,
+    }
+
+
 # ----------------------------------------------------------------------------
 # Gathering
 # ----------------------------------------------------------------------------
@@ -485,6 +565,7 @@ def _party_payload(
         "viewer_confirmed": viewer_confirmed,
         "can_confirm": can_confirm,
         "met": met,
+        "needed": 0,
     }
 
 
@@ -530,6 +611,12 @@ def _cards_for_key(
         )
         if fresh is not None:
             cards.append(fresh)
+        elif not cards:
+            # Nothing viable AND nothing else to show for this key — surface
+            # how close it is ("needs N more") instead of a silent dead end.
+            near = _near_miss_payload(day, cands, viewer_id, members, unattached)
+            if near is not None:
+                cards.append(near)
     # The viewer's own party first, then joinable ones (fullest first), then
     # full ones, with the fresh card at the end.
     cards.sort(
@@ -732,4 +819,5 @@ def set_confirmation(
         "viewer_confirmed": False,
         "can_confirm": False,
         "met": False,
+        "needed": 0,
     }

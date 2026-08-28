@@ -190,12 +190,18 @@ function EventPageInner() {
 
   const going = !!ev && ev.viewer_confirmed && ev.met;
   const pending = !!ev && ev.viewer_confirmed && !ev.met;
-  const full = !!ev && !ev.viewer_confirmed && !ev.can_confirm;
+  // NEAR-MISS: no viable gathering yet — "Needs N more" instead of Full.
+  const short = !!ev && !ev.viewer_confirmed && (ev.needed ?? 0) > 0;
+  const full = !!ev && !ev.viewer_confirmed && !ev.can_confirm && !short;
   const statusPill = going ? (
     <span className="rounded-full bg-green-600 px-3 py-1 text-sm font-medium text-white">You&apos;re going!</span>
   ) : pending ? (
     <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
       Pending
+    </span>
+  ) : short ? (
+    <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+      Needs {ev.needed} more
     </span>
   ) : full ? (
     <span className="rounded-full bg-gray-200 px-3 py-1 text-sm font-medium text-gray-400 dark:bg-gray-700 dark:text-gray-500">
@@ -338,6 +344,11 @@ function EventPageInner() {
                   >
                     Confirm
                   </button>
+                ) : short ? (
+                  <div className="w-full rounded-2xl bg-amber-50 py-3 text-center font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                    Needs {ev.needed} more {ev.needed === 1 ? "person" : "people"} — share the
+                    activity to make it happen
+                  </div>
                 ) : (
                   <div className="w-full rounded-2xl bg-gray-100 py-3 text-center font-medium text-gray-400 dark:bg-gray-800 dark:text-gray-500">
                     Full — someone would be left out if you joined

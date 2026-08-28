@@ -251,6 +251,11 @@ class SlotEventResponse(BaseModel):
     viewer_confirmed: bool = False
     can_confirm: bool = False
     met: bool = False
+    # NEAR-MISS: how many more people a gathering still needs before it's
+    # viable (0 on a normal card). Shown when no viable gathering exists so a
+    # declared activity is never a silent dead end; such a card is not
+    # confirmable yet.
+    needed: int = 0
 
 
 class SlotEventsResponse(BaseModel):

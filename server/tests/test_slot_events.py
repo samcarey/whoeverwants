@@ -12,6 +12,7 @@ from services.slot_events import (
     _Candidate,
     _best_start,
     _intersect,
+    _needed_more,
     _preferred_viable_start,
     _set_ok,
 )
@@ -202,6 +203,17 @@ def test_no_preferences_reduce_to_earliest():
     assert _best_start([a, b], [(540, 1020)]) == 540
 
 
+def test_needed_more_counts_the_gap():
+    # Alone: one more person reaches MIN_EVENT_PEOPLE.
+    assert _needed_more(_cand("a"), [], {}) == 1
+    # A minimum of 4 with one compatible other: two short.
+    a = _cand("a", min_people=4)
+    assert _needed_more(a, [_cand("b")], {}) == 2
+    # A maximum below the binding minimum can never fit the missing heads.
+    a = _cand("a", min_people=4, max_people=3)
+    assert _needed_more(a, [_cand("b")], {}) is None
+
+
 # --- API ---------------------------------------------------------------------
 
 
@@ -256,21 +268,32 @@ def test_time_prefs_move_the_proposed_time(client):
     assert r.json()["time"] == "14:00"
 
 
-def test_non_overlapping_windows_propose_nothing(client):
+def test_non_overlapping_windows_propose_a_near_miss(client):
+    """No shared window → no viable event, but each declarer sees a "needs 1
+    more" near-miss for their own activity rather than nothing."""
     a, b = str(uuid.uuid4()), str(uuid.uuid4())
     day = _day(1)
     act = _act("Chess")
     _create_slot(client, browser_id=a, day_time_windows=_dtw(day, "09:00", "12:00"), activities=[act])
     _create_slot(client, browser_id=b, day_time_windows=_dtw(day, "13:00", "17:00"), activities=[act])
-    assert _events(client, browser_id=a) == []
-    assert _events(client, browser_id=b) == []
+    for bid in (a, b):
+        evs = _events(client, browser_id=bid)
+        assert len(evs) == 1
+        ev = evs[0]
+        assert ev["needed"] == 1 and not ev["can_confirm"] and ev["time"] is None
 
 
-def test_solo_candidate_sees_no_event(client):
+def test_solo_candidate_sees_a_near_miss(client):
+    """The classic dead end — you declared, nobody else has it — now reads
+    "needs 1 more" instead of an empty timeline."""
     a = str(uuid.uuid4())
     act = _act("Reading")
     _create_slot(client, browser_id=a, day_time_windows=_dtw(_day(1)), activities=[act])
-    assert _events(client, browser_id=a) == []
+    evs = _events(client, browser_id=a)
+    assert len(evs) == 1
+    assert evs[0]["needed"] == 1 and not evs[0]["can_confirm"] and not evs[0]["met"]
+    # Not confirmable yet — the server gates it, not just the FE flag.
+    assert _confirm(client, browser_id=a, day=_day(1), activity=act).status_code == 409
 
 
 def test_max_people_makes_the_event_full_until_someone_cancels(client):
@@ -351,9 +374,12 @@ def test_pairwise_impossible_event_is_not_proposed(client):
         activities=[{"name": act, "who_with": [{"exclude_people": [{"id": c_uid, "name": "Cal"}]}]}],
     )
     _create_slot(client, browser_id=c, day_time_windows=_dtw(day), activities=[act])
-    # The only possible pair violates A's exclusion → no event for anyone.
-    assert _events(client, browser_id=a) == []
-    assert _events(client, browser_id=c) == []
+    # The only possible pair violates A's exclusion → no VIABLE event for
+    # anyone; both fall back to a near-miss (the incompatible other doesn't
+    # count toward it).
+    for bid in (a, c):
+        evs = _events(client, browser_id=bid)
+        assert len(evs) == 1 and evs[0]["needed"] == 1 and not evs[0]["can_confirm"]
 
 
 def test_minimum_people_gates_the_proposal_until_a_third_arrives(client):
@@ -365,11 +391,10 @@ def test_minimum_people_gates_the_proposal_until_a_third_arrives(client):
         activities=[{"name": act, "who_with": [{"min_people": 3}]}],
     )
     _create_slot(client, browser_id=b, day_time_windows=_dtw(day), activities=[act])
-    # Two candidates can't reach A's minimum of 3 → nothing proposed to A.
-    assert _events(client, browser_id=a) == []
-    # B's own condition is unconstrained, and a viable trio doesn't exist yet
-    # either (any set with A needs 3, and without A there's only B) → nothing.
-    assert _events(client, browser_id=b) == []
+    # Two candidates can't reach A's minimum of 3 → no viable event yet, but
+    # both see the near-miss: one more person makes it work.
+    assert [e["needed"] for e in _events(client, browser_id=a)] == [1]
+    assert [e["needed"] for e in _events(client, browser_id=b)] == [1]
 
     _create_slot(client, browser_id=c, day_time_windows=_dtw(day), activities=[act])
     evs = _events(client, browser_id=a)

@@ -183,6 +183,11 @@ export interface SlotEvent {
   /** The confirmed set satisfies everyone in it, minimums included — the
    *  event is on; the card goes bold. */
   met: boolean;
+  /** NEAR-MISS: how many more people a gathering still needs before it's
+   *  viable (0 on a normal card). When > 0 the card reads "Needs N more"
+   *  and isn't confirmable yet — shown so a declared activity is never a
+   *  silent dead end. */
+  needed: number;
 }
 
 /** Last-resolved events list — the same first-commit-paint role cachedSlots
