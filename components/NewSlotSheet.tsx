@@ -1033,7 +1033,9 @@ export default function NewSlotSheet() {
               bubble is there or not — so the cards below never shift as the
               count loads, appears, or clears. */}
           {showActivity && !isNewActivity && (
-            <div aria-live="polite" className="shrink-0 h-8 flex items-start justify-center">
+            // -mt-2 tucks the bubble up against the title (the header's
+            // min-height leaves centering slack below it).
+            <div aria-live="polite" className="shrink-0 h-8 -mt-2 flex items-start justify-center">
               {neededMore > 0 && (
                 <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                   Needs {neededMore} more {neededMore === 1 ? "person" : "people"}
