@@ -139,10 +139,7 @@ function EventCard({
 }) {
   const going = ev.viewer_confirmed && ev.met;
   const pending = ev.viewer_confirmed && !ev.met;
-  // NEAR-MISS: no viable gathering yet — the card says how many more people
-  // it needs instead of silently not existing (amber, not confirmable).
-  const short = !ev.viewer_confirmed && (ev.needed ?? 0) > 0;
-  const full = !ev.viewer_confirmed && !ev.can_confirm && !short;
+  const full = !ev.viewer_confirmed && !ev.can_confirm;
   // Everyone confirmed except the viewer (the server already leaves them out of
   // confirmed_names; confirmed_count counts them).
   const othersTotal = ev.confirmed_count - (ev.viewer_confirmed ? 1 : 0);
@@ -153,11 +150,9 @@ function EventCard({
     ? "border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-semibold"
     : pending
       ? "border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200"
-      : short
-        ? "border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200"
-        : full
-          ? "border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/60 text-gray-400 dark:text-gray-500"
-          : "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300";
+      : full
+        ? "border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/60 text-gray-400 dark:text-gray-500"
+        : "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300";
   const timeCls = going
     ? "text-green-600 dark:text-green-300"
     : pending
@@ -221,10 +216,6 @@ function EventCard({
           {going ? (
             <span className="shrink-0 whitespace-nowrap rounded-full bg-green-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white">
               You&apos;re going!
-            </span>
-          ) : short ? (
-            <span className="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-0.5 text-[11.5px] font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
-              Needs {ev.needed} more
             </span>
           ) : pending ? (
             <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-0.5 text-[11.5px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">

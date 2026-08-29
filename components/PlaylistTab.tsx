@@ -231,6 +231,10 @@ export default function PlaylistTab() {
   const eventsByEntryKey = useMemo(() => {
     const map = new Map<string, SlotEvent[]>();
     for (const ev of events) {
+      // NEAR-MISS ("needs N more") events aren't cards — there's nothing to
+      // act on yet. They surface as a bubble in the activity's edit sheet
+      // instead (see NewSlotSheet), so the timeline stays actionable.
+      if ((ev.needed ?? 0) > 0) continue;
       const dayEntries = entries.filter((e) => e.day === ev.day);
       if (dayEntries.length === 0) continue;
       const target = ev.window

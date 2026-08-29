@@ -60,12 +60,15 @@ import {
   apiUpdateSlot,
   apiDeleteSlot,
   apiGetActivitySuggestions,
+  apiGetSlotEvents,
   apiGetWhoWithCandidates,
+  getCachedSlotEvents,
   type WhoWithCandidate,
   type ActivitySuggestion,
   type ActivitySuggestions,
   type Slot,
   type SlotActivity,
+  type SlotEvent,
   type WhoWithEntry,
   type WhoWithRef,
 } from "@/lib/api/slots";
@@ -453,6 +456,37 @@ export default function NewSlotSheet() {
       cancelled = true;
     };
   }, [isOpen, showActivity]);
+
+  // NEAR-MISS: how many more people this activity still needs before it can
+  // actually happen. The engine derives it per (day, activity) alongside the
+  // real events; it isn't a timeline card (there's nothing to act on yet), so
+  // it surfaces here as a bubble under the activity's name. Seeded from the
+  // events cache the timeline keeps warm, then refreshed on open.
+  const [slotEvents, setSlotEvents] = useState<SlotEvent[]>(() => getCachedSlotEvents() ?? []);
+  useEffect(() => {
+    if (!isOpen || !showActivity) return;
+    let cancelled = false;
+    apiGetSlotEvents()
+      .then((e) => {
+        if (!cancelled) setSlotEvents(e);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, showActivity]);
+
+  // Matched on the SAVED name (the draft's changes as you type) + any day the
+  // slot covers. Only meaningful for an activity that already exists.
+  const savedActivityName =
+    activityIndex !== null ? editingSlot?.activities[activityIndex]?.name ?? null : null;
+  const neededMore = useMemo(() => {
+    if (!savedActivityName || !editingSlot) return 0;
+    const key = nameKey(savedActivityName);
+    const days = new Set(editingSlot.day_time_windows.map((d) => d.day));
+    const ev = slotEvents.find((e) => nameKey(e.activity) === key && days.has(e.day));
+    return ev?.needed ?? 0;
+  }, [slotEvents, savedActivityName, editingSlot]);
 
   // CandidatePicker takes its options LEAST relevant first, so the server's
   // most-relevant-first ranking is reversed once here.
@@ -1039,6 +1073,18 @@ export default function NewSlotSheet() {
             {showActivity && (<>
             {/* Emoji + name — the activity itself. */}
             {activityField}
+
+            {/* How far this activity is from actually happening. It sits
+                under the name rather than on the timeline: with nobody to
+                gather yet there's nothing to confirm, so it's information
+                about THIS activity, not an event card. */}
+            {neededMore > 0 && (
+              <div className="flex justify-center">
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                  Needs {neededMore} more {neededMore === 1 ? "person" : "people"}
+                </span>
+              </div>
+            )}
 
             {/* The activity's who-with condition, EDIT MODE ONLY — adding is
                 just "which activity?", and you tap the activity afterward to
