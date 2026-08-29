@@ -6,17 +6,20 @@
  * value right, with an invisible native <select> overlaid — same pattern as
  * ScoringAlgorithmField / VotingCutoffField.
  *
- * Values are TOTAL head counts but read as "how many besides me": 1 is "Me",
- * 2 is "+1", … 8 is "+7". The caller keeps the pair ordered (raising the
- * minimum pushes the maximum up, and vice versa).
+ * Values are TOTAL head counts but read as "how many besides me": 1 is
+ * "Just me", 2 is "1 other", … 8 is "7 others". The caller keeps the pair
+ * ordered (raising the minimum pushes the maximum up, and vice versa).
  */
 
 export const PARTY_MIN = 1;
 export const PARTY_MAX = 8;
 
-/** 1 → "Me", 2 → "+1", … (the count is total people including the owner). */
+/** 1 → "Just me", 2 → "1 other", 3 → "2 others", … (the count is total
+ *  people including the owner). */
 export function partyCountLabel(n: number): string {
-  return n <= 1 ? "Me" : `+${n - 1}`;
+  if (n <= 1) return "Just me";
+  const others = n - 1;
+  return `${others} other${others === 1 ? "" : "s"}`;
 }
 
 interface PartyCountFieldProps {
