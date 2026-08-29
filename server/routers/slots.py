@@ -102,6 +102,12 @@ class ActivityInput(BaseModel):
     who_with: list[WhoWithEntry] | None = None
     # Optional per-activity start-time preferences (see TimePrefs).
     time_prefs: TimePrefs | None = None
+    # Optional duration bounds in hours (0.5 steps). The engine only proposes
+    # events whose members' bounds are mutually satisfiable AND whose start
+    # leaves room for the binding minimum inside the shared window. None =
+    # unconstrained. Sanitized in services.slots (max bumped up to min).
+    min_hours: float | None = None
+    max_hours: float | None = None
 
 
 class CreateSlotRequest(BaseModel):
@@ -129,6 +135,8 @@ class SlotActivity(BaseModel):
     max_people: int | None = None
     who_with: list[WhoWithEntry] | None = None
     time_prefs: TimePrefs | None = None
+    min_hours: float | None = None
+    max_hours: float | None = None
 
 
 class SlotResponse(BaseModel):

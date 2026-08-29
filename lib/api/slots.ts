@@ -60,6 +60,12 @@ export interface SlotActivity extends ActivitySuggestion {
   who_with?: WhoWithEntry[] | null;
   /** Start-time preferences (see TimePrefs); null = no preference. */
   time_prefs?: TimePrefs | null;
+  /** Duration bounds in hours (0.5 steps). The engine only proposes events
+   *  whose members' bounds are mutually satisfiable AND whose start leaves
+   *  room for the binding minimum inside the shared window. null =
+   *  unconstrained (legacy rows). */
+  min_hours?: number | null;
+  max_hours?: number | null;
 }
 
 export interface ActivitySuggestions {

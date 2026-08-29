@@ -203,6 +203,63 @@ def test_no_preferences_reduce_to_earliest():
     assert _best_start([a, b], [(540, 1020)]) == 540
 
 
+def test_duration_bounds_must_be_mutually_satisfiable():
+    """min 3h vs max 2h can never agree on a length — the set is not viable,
+    growing or final (growth only tightens the bounds)."""
+    a = _cand("a", min_dur=180)
+    b = _cand("b", max_dur=120)
+    assert not _set_ok([a, b], {}, require_min=False)
+    assert not _set_ok([a, b], {}, require_min=True)
+    # Compatible bounds (3h fits under a 4h cap) pass.
+    b.max_dur = 240
+    assert _set_ok([a, b], {}, require_min=False)
+
+
+def test_event_must_fit_the_shared_window():
+    """A 2h window can't hold a 3h minimum — no event, whatever the people
+    math says."""
+    a = _cand("a", windows=[(540, 660)], min_dur=180)  # 9–11, wants ≥3h
+    b = _cand("b", windows=[(540, 660)])
+    assert not _set_ok([a, b], {}, require_min=False)
+    a.min_dur = 120  # exactly fits
+    assert _set_ok([a, b], {}, require_min=False)
+
+
+def test_start_cannot_outlast_someones_window():
+    """A liked start too close to the window's end is skipped — an event may
+    not start where the binding minimum would run past the shared window."""
+    a = _cand("a", min_dur=120, liked={960})  # loves 4 PM, but needs 2h before 5 PM
+    b = _cand("b")
+    # 16:00 + 2h > 17:00 → the liked mark is invalid; earliest fitting start wins.
+    assert _best_start([a, b], [(540, 1020)]) == 540
+    # A liked mark that still fits (3 PM + 2h = 5 PM exactly) is honored.
+    a.liked = {900}
+    assert _best_start([a, b], [(540, 1020)]) == 900
+
+
+def test_growth_that_breaks_the_fit_falls_back_to_the_fitting_pair():
+    """The trio's extra member squeezes the shared window below the binding
+    minimum, so the viable pick is the pair — duration gating composes with
+    the subset walk."""
+    a = _cand("a", windows=[(540, 1020)], min_dur=240)  # needs 4h
+    b = _cand("b", windows=[(540, 1020)])
+    c = _cand("c", windows=[(540, 720)])  # only 9–12 — a trio has just 3h
+    assert _preferred_viable_start(a, [b, c], {}) == 540
+    # And if EVERY companion shrinks the window below the minimum → nothing.
+    b.windows = [(540, 720)]
+    assert _preferred_viable_start(a, [b, c], {}) is None
+
+
+def test_needed_more_requires_a_fitting_window():
+    """More people can't stretch a too-short window: a solo whose own window
+    can't hold their minimum gets NO near-miss (nothing would fix it)."""
+    a = _cand("a", windows=[(540, 660)], min_dur=240)  # 2h window, wants 4h
+    assert _needed_more(a, [], {}) is None
+    # With a fitting window the near-miss math is unchanged.
+    a.min_dur = 60
+    assert _needed_more(a, [], {}) == 1
+
+
 def test_needed_more_counts_the_gap():
     # Alone: one more person reaches MIN_EVENT_PEOPLE.
     assert _needed_more(_cand("a"), [], {}) == 1
@@ -266,6 +323,60 @@ def test_time_prefs_move_the_proposed_time(client):
     r = _confirm(client, browser_id=b, day=day, activity=act)
     assert r.status_code == 200 and r.json()["met"]
     assert r.json()["time"] == "14:00"
+
+
+def test_duration_bounds_shape_events_end_to_end(client):
+    """min_hours/max_hours through the API: a 2h minimum pins the start to
+    where it still fits the overlap; an incompatible pair (min 3h vs max 2h)
+    degrades both to near-misses."""
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    day = _day(1)
+    act = _act("Museum")
+    # A: 12–5 wanting >=2h. B: 12–2 → the overlap is exactly 2h, so the ONLY
+    # viable start is noon; anything later would outlast B's window.
+    _create_slot(
+        client, browser_id=a, day_time_windows=_dtw(day, "12:00", "17:00"),
+        activities=[{"name": act, "min_hours": 2, "time_prefs": {"liked": ["13:00"], "disliked": []}}],
+    )
+    _create_slot(client, browser_id=b, day_time_windows=_dtw(day, "12:00", "14:00"), activities=[act])
+    ev = _events(client, browser_id=a)[0]
+    # A's liked 13:00 would run to 15:00 — past B's window — so it's ignored.
+    assert ev["needed"] == 0 and ev["time"] == "12:00"
+
+    # An incompatible duration pair never proposes.
+    act2 = _act("Golf")
+    c, d = str(uuid.uuid4()), str(uuid.uuid4())
+    _create_slot(
+        client, browser_id=c, day_time_windows=_dtw(day),
+        activities=[{"name": act2, "min_hours": 3}],
+    )
+    _create_slot(
+        client, browser_id=d, day_time_windows=_dtw(day),
+        activities=[{"name": act2, "max_hours": 2}],
+    )
+    for bid in (c, d):
+        evs = [e for e in _events(client, browser_id=bid) if e["activity"] == act2]
+        assert len(evs) == 1 and evs[0]["needed"] == 1 and not evs[0]["can_confirm"]
+
+
+def test_joiner_whose_minimum_cannot_fit_is_locked_out(client):
+    """can_confirm gating: a met party stays Full for a viewer whose own
+    minimum duration can't fit the window they'd share with it."""
+    a, b, c = (str(uuid.uuid4()) for _ in range(3))
+    day = _day(1)
+    act = _act("Sauna")
+    _create_slot(client, browser_id=a, day_time_windows=_dtw(day), activities=[act])
+    _create_slot(client, browser_id=b, day_time_windows=_dtw(day), activities=[act])
+    # C only has 9–11 and insists on >=4h.
+    _create_slot(
+        client, browser_id=c, day_time_windows=_dtw(day, "09:00", "11:00"),
+        activities=[{"name": act, "min_hours": 4}],
+    )
+    _confirm(client, browser_id=a, day=day, activity=act)
+    assert _confirm(client, browser_id=b, day=day, activity=act).json()["met"]
+    ev = _events(client, browser_id=c)[0]
+    assert not ev["can_confirm"] and not ev["viewer_confirmed"]
+    assert _confirm(client, browser_id=c, day=day, activity=act).status_code == 409
 
 
 def test_non_overlapping_windows_propose_a_near_miss(client):

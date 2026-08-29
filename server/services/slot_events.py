@@ -90,6 +90,12 @@ class _Candidate:
     # winner rule); all-empty preserves the old earliest-start behavior.
     liked: set[int] = field(default_factory=set)
     disliked: set[int] = field(default_factory=set)
+    # Duration bounds in MINUTES (from min_hours/max_hours). min_dur 0 /
+    # max_dur None = unconstrained. A set is duration-compatible when
+    # max(min_dur) <= min(max_dur), and an event can only start where the
+    # binding minimum still fits the shared window.
+    min_dur: int = 0
+    max_dur: int | None = None
 
     @property
     def has_include(self) -> bool:
@@ -165,6 +171,28 @@ def _common_windows(cands: list[_Candidate]) -> list[tuple[int, int]]:
     return common
 
 
+def _required_min_dur(cands: list[_Candidate]) -> int:
+    """The binding minimum duration for this set — the event must run at
+    least this long or somebody's minimum isn't met."""
+    return max((c.min_dur for c in cands), default=0)
+
+
+def _durations_ok(cands: list[_Candidate]) -> bool:
+    """Are the set's duration bounds mutually satisfiable? Someone insisting
+    on >= 3h can't gather with someone capping at 2h. Growth can only raise
+    the binding minimum / lower the allowed maximum, so this is enforced for
+    growing AND final sets alike."""
+    caps = [c.max_dur for c in cands if c.max_dur is not None]
+    return not caps or _required_min_dur(cands) <= min(caps)
+
+
+def _fitting_windows(cands: list[_Candidate]) -> list[tuple[int, int]]:
+    """The shared windows long enough to hold the set's binding minimum —
+    an event must FIT, not merely start, inside everyone's availability."""
+    req = _required_min_dur(cands)
+    return [w for w in _common_windows(cands) if w[1] - w[0] >= req]
+
+
 def _allows(c: _Candidate, other_uid: str, members: dict[str, set[str]]) -> bool:
     """Would `c` do this activity alongside `other_uid`? Exclusions veto;
     a non-empty include set must claim them; empty include set = anyone."""
@@ -189,7 +217,11 @@ def _constraints_ok(
     """Does this exact set satisfy every member's size + include/exclude
     conditions (the time windows are checked separately)? `require_min`
     distinguishes "the event is on" (mins must hold) from "may this person
-    join a still-growing set" (mins are satisfied by growth, not violated)."""
+    join a still-growing set" (mins are satisfied by growth, not violated).
+    Duration bounds are enforced unconditionally (growth can only tighten
+    them — see _durations_ok)."""
+    if not _durations_ok(cands):
+        return False
     n = len(cands)
     for c in cands:
         if require_min and n < c.min_people:
@@ -208,9 +240,10 @@ def _set_ok(
     *,
     require_min: bool,
 ) -> bool:
-    """Constraints AND a shared time window — the full "this set works" check."""
+    """Constraints AND a shared time window LONG ENOUGH for the binding
+    minimum duration — the full "this set works" check."""
     return _constraints_ok(cands, members, require_min=require_min) and bool(
-        _common_windows(cands)
+        _fitting_windows(cands)
     )
 
 
@@ -223,15 +256,21 @@ def _start_candidates(cands: list[_Candidate], commons: list[tuple[int, int]]) -
     """The start minutes worth scoring within the shared windows: each window's
     own start (the old earliest-start behavior), every member's liked mark
     (something to move TOWARD), and one step past every disliked mark
-    (somewhere to escape a disliked window start to)."""
+    (somewhere to escape a disliked window start to). Every candidate must
+    leave room for the set's binding minimum duration before the window
+    closes — an event may not start where it would outlast someone's
+    availability — and windows too short for it are skipped outright."""
+    req = _required_min_dur(cands)
     out: set[int] = set()
     marks: set[int] = set()
     for c in cands:
         marks |= c.liked
         marks |= {d + PREF_STEP for d in c.disliked}
     for lo, hi in commons:
+        if hi - lo < req:
+            continue
         out.add(lo)
-        out.update(m for m in marks if lo <= m < hi)
+        out.update(m for m in marks if lo <= m < hi and m + req <= hi)
     return sorted(out)
 
 
@@ -318,7 +357,7 @@ def _needed_more(
         subset = [viewer] + [o for i, o in enumerate(pool) if mask >> i & 1]
         if not _constraints_ok(subset, members, require_min=False):
             continue
-        if not _common_windows(subset):
+        if not _fitting_windows(subset):
             continue
         n = len(subset)
         need = max(MIN_EVENT_PEOPLE, max(c.min_people for c in subset)) - n
@@ -384,7 +423,8 @@ def _gather_days(conn, days: list[str]) -> dict[tuple[str, str], dict[str, _Cand
         """
         SELECT s.user_id, u.display_name, s.day_time_windows,
                sa.activity, sa.emoji, sa.min_people, sa.max_people,
-               sa.who_with, sa.time_prefs, sa.created_at
+               sa.who_with, sa.time_prefs, sa.min_hours, sa.max_hours,
+               sa.created_at
           FROM slots s
           JOIN slot_activities sa ON sa.slot_id = s.id
           JOIN users u ON u.id = s.user_id
@@ -429,6 +469,8 @@ def _gather_days(conn, days: list[str]) -> dict[tuple[str, str], dict[str, _Cand
                     },
                 )
                 _apply_time_prefs(cand, r["time_prefs"])
+                cand.min_dur = int(round(float(r["min_hours"]) * 60)) if r["min_hours"] is not None else 0
+                cand.max_dur = int(round(float(r["max_hours"]) * 60)) if r["max_hours"] is not None else None
     return events
 
 

@@ -220,6 +220,28 @@ def test_activity_time_prefs_round_trip_and_sanitize(client):
     assert by_name["Walk"]["time_prefs"] is None
 
 
+def test_activity_hours_round_trip_and_sanitize(client):
+    bid = str(uuid.uuid4())
+    _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw(_day(1)),
+        activities=[
+            {"name": "Museum", "min_hours": 1.5, "max_hours": 4},
+            # max < min bumps up; zero/negative → unset; off-grid rounds to 0.5.
+            {"name": "Golf", "min_hours": 3, "max_hours": 2},
+            {"name": "Walk", "min_hours": 0, "max_hours": -1},
+            {"name": "Chess", "min_hours": 1.24, "max_hours": 100},
+        ],
+    )
+    s = _list_slots(client, browser_id=bid).json()["slots"][0]
+    by_name = {a["name"]: a for a in s["activities"]}
+    assert (by_name["Museum"]["min_hours"], by_name["Museum"]["max_hours"]) == (1.5, 4)
+    assert (by_name["Golf"]["min_hours"], by_name["Golf"]["max_hours"]) == (3, 3)
+    assert (by_name["Walk"]["min_hours"], by_name["Walk"]["max_hours"]) == (None, None)
+    assert (by_name["Chess"]["min_hours"], by_name["Chess"]["max_hours"]) == (1.0, 24)
+
+
 def test_activity_participant_range_sanitized(client):
     bid = str(uuid.uuid4())
     _create_slot(

@@ -43,6 +43,8 @@ SUGGESTIONS_PER_GROUP = 15
 MAX_PEOPLE = 999
 # Per-activity preferred-start-time caps (silent truncation).
 MAX_TIME_PREFS = 96
+# Duration bounds sanity cap (a slot is at most a day).
+MAX_HOURS = 24
 # Per-activity "who with" caps (silent truncation, like COMMENT_MAX_CHARS).
 MAX_WITH_NAMES = 20
 MAX_WITH_NAME_CHARS = 50
@@ -187,6 +189,21 @@ def _clean_who_with(value) -> list[dict] | None:
         if len(out) >= MAX_WHO_WITH_ENTRIES:
             break
     return out or None
+
+
+def _clean_hours(value) -> float | None:
+    """Coerce a per-activity duration bound to a positive number of hours in
+    (0, MAX_HOURS], rounded to the nearest half hour; None / non-numeric /
+    <= 0 → None (unconstrained)."""
+    if value is None:
+        return None
+    try:
+        h = float(value)
+    except (ValueError, TypeError):
+        return None
+    if h <= 0:
+        return None
+    return min(round(h * 2) / 2 or 0.5, MAX_HOURS)
 
 
 def _clean_time_prefs(value) -> dict | None:
@@ -342,11 +359,17 @@ def _insert_slot_activities(conn, slot_id: str, activities, *, user_id: str) -> 
                 ref_maps = (_member_group_names(conn, user_id), _contact_names(conn, user_id))
             who_with = _resolve_who_with(who_with, *ref_maps)
         time_prefs = _clean_time_prefs(raw.get("time_prefs"))
+        min_hours = _clean_hours(raw.get("min_hours"))
+        max_hours = _clean_hours(raw.get("max_hours"))
+        if min_hours is not None and max_hours is not None and max_hours < min_hours:
+            max_hours = min_hours
         conn.execute(
             """
             INSERT INTO slot_activities
-                (slot_id, activity, emoji, min_people, max_people, who_with, time_prefs)
-            VALUES (%(s)s::uuid, %(a)s, %(e)s, %(mn)s, %(mx)s, %(ww)s::jsonb, %(tp)s::jsonb)
+                (slot_id, activity, emoji, min_people, max_people, who_with, time_prefs,
+                 min_hours, max_hours)
+            VALUES (%(s)s::uuid, %(a)s, %(e)s, %(mn)s, %(mx)s, %(ww)s::jsonb, %(tp)s::jsonb,
+                    %(mnh)s, %(mxh)s)
             """,
             {
                 "s": slot_id,
@@ -356,6 +379,8 @@ def _insert_slot_activities(conn, slot_id: str, activities, *, user_id: str) -> 
                 "mx": max_people,
                 "ww": json.dumps(who_with) if who_with else None,
                 "tp": json.dumps(time_prefs) if time_prefs else None,
+                "mnh": min_hours,
+                "mxh": max_hours,
             },
         )
 
@@ -445,7 +470,8 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
     if slot_ids:
         arows = conn.execute(
             """
-            SELECT slot_id, activity, emoji, min_people, max_people, who_with, time_prefs
+            SELECT slot_id, activity, emoji, min_people, max_people, who_with, time_prefs,
+                   min_hours, max_hours
               FROM slot_activities
              WHERE slot_id = ANY(%(ids)s::uuid[])
              ORDER BY created_at
@@ -461,6 +487,9 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
                     "max_people": a["max_people"],
                     "who_with": a["who_with"] or None,
                     "time_prefs": a["time_prefs"] or None,
+                    # NUMERIC comes back as Decimal — the JSON layer wants float.
+                    "min_hours": float(a["min_hours"]) if a["min_hours"] is not None else None,
+                    "max_hours": float(a["max_hours"]) if a["max_hours"] is not None else None,
                 }
             )
     return [

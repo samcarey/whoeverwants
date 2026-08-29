@@ -49,6 +49,7 @@ import EmojiPickerModal from "@/components/EmojiPickerModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import CandidatePicker, { candidateKey, type Candidate } from "@/components/CandidatePicker";
 import PartyCountField from "@/components/PartyCountField";
+import HoursField, { HOURS_OPTIONS } from "@/components/HoursField";
 import ModalPortal from "@/components/ModalPortal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { cancelPrimedFocus, consumePrimedFocus } from "@/lib/useKeyboardPrimer";
@@ -109,19 +110,35 @@ const EMPTY_ENTRY: EditableEntry = {
 };
 
 /** The ONE activity the sheet is editing: its name, its chosen emoji ("" =
- *  none, picker faded), its single who-with condition, and its start-time
- *  preferences (HH:MM marks — see TimePrefs). The editor writes who_with
- *  exclusively — the legacy activity-level range converts into the
- *  condition's range on load. */
+ *  none, picker faded), its single who-with condition, its start-time
+ *  preferences (HH:MM marks — see TimePrefs), and its duration bounds in
+ *  hours. The editor writes who_with exclusively — the legacy activity-level
+ *  range converts into the condition's range on load. */
 interface ActivityDraft {
   name: string;
   emoji: string;
   entry: EditableEntry;
   liked: string[];
   disliked: string[];
+  minHours: number;
+  maxHours: number;
 }
 
-const EMPTY_DRAFT: ActivityDraft = { name: "", emoji: "", entry: EMPTY_ENTRY, liked: [], disliked: [] };
+/** The weakest bounds on offer — what a fresh activity (or a legacy one with
+ *  none stored) reads as, so the default is as close to unconstrained as the
+ *  picker allows. */
+const DEFAULT_MIN_HOURS = HOURS_OPTIONS[0];
+const DEFAULT_MAX_HOURS = HOURS_OPTIONS[HOURS_OPTIONS.length - 1];
+
+const EMPTY_DRAFT: ActivityDraft = {
+  name: "",
+  emoji: "",
+  entry: EMPTY_ENTRY,
+  liked: [],
+  disliked: [],
+  minHours: DEFAULT_MIN_HOURS,
+  maxHours: DEFAULT_MAX_HOURS,
+};
 
 /** Seed the who-with condition from a loaded activity: its FIRST who_with
  *  entry (the editor is single-condition now — a legacy activity with several
@@ -187,9 +204,13 @@ const startOfKey = (key: string) => key.split(" ")[1]?.split("-")[0] ?? "";
 
 /** Candidate start-time bubbles across the slot's windows, as slot keys the
  *  bubble grid understands. Cross-midnight windows (max <= min, the app-wide
- *  convention) clip at midnight — starts stay within the slot's own day. */
-function prefOptionsForSlot(slot: Slot | null): string[] {
+ *  convention) clip at midnight — starts stay within the slot's own day.
+ *  `minHours` (the activity's minimum duration) trims starts the activity
+ *  couldn't FIT from: a 2h-minimum activity in an 11–5 window can't start
+ *  after 3, so 3:30+ aren't offered. */
+function prefOptionsForSlot(slot: Slot | null, minHours: number): string[] {
   if (!slot) return [];
+  const minMins = Math.max(0, Math.round(minHours * 60));
   const out: string[] = [];
   for (const dtw of slot.day_time_windows ?? []) {
     if (!dtw.day) continue;
@@ -198,7 +219,8 @@ function prefOptionsForSlot(slot: Slot | null): string[] {
       const mxRaw = minsOfHHMM(w.max);
       if (mn == null || mxRaw == null) continue;
       const mx = mxRaw > mn ? mxRaw : 1440;
-      for (let s = mn; s < mx; s += PREF_STEP_MIN) {
+      const latest = mx - minMins;
+      for (let s = mn; s < mx && s <= latest; s += PREF_STEP_MIN) {
         out.push(`${dtw.day} ${fmtMins(s)}-${fmtMins(s + PREF_STEP_MIN)}`);
       }
     }
@@ -392,6 +414,8 @@ export default function NewSlotSheet() {
               entry: entryFromActivity(existing),
               liked: existing.time_prefs?.liked ?? [],
               disliked: existing.time_prefs?.disliked ?? [],
+              minHours: existing.min_hours ?? DEFAULT_MIN_HOURS,
+              maxHours: existing.max_hours ?? DEFAULT_MAX_HOURS,
             }
           : EMPTY_DRAFT,
       );
@@ -544,6 +568,8 @@ export default function NewSlotSheet() {
           d.liked.length > 0 || d.disliked.length > 0
             ? { liked: d.liked, disliked: d.disliked }
             : null,
+        min_hours: d.minHours,
+        max_hours: d.maxHours,
       };
       let base: SlotActivity[];
       if (activityIndex !== null) {
@@ -589,7 +615,10 @@ export default function NewSlotSheet() {
   // The preferred-start-times ballot: 30-min start bubbles over the slot's
   // own window, cycling neutral → prefer (green) → avoid (red) → neutral —
   // the time-poll ballot reused. Marks store as day-agnostic HH:MM starts.
-  const prefOptions = useMemo(() => prefOptionsForSlot(editingSlot), [editingSlot]);
+  const prefOptions = useMemo(
+    () => prefOptionsForSlot(editingSlot, draft.minHours),
+    [editingSlot, draft.minHours],
+  );
   const likedPrefKeys = useMemo(
     () => prefOptions.filter((k) => draft.liked.includes(startOfKey(k))),
     [prefOptions, draft.liked],
@@ -631,6 +660,16 @@ export default function NewSlotSheet() {
       entry: { ...prev.entry, maxPeople: n, minPeople: Math.min(prev.entry.minPeople, n) },
     }));
   }, []);
+  // Duration bounds stay ordered INSTANTLY, mirroring the people pair:
+  // raising the minimum pushes the maximum up, lowering the maximum pulls
+  // the minimum down (the Max field also only offers options >= min).
+  const setMinHours = useCallback((h: number) => {
+    setDraft((prev) => ({ ...prev, minHours: h, maxHours: Math.max(prev.maxHours, h) }));
+  }, []);
+  const setMaxHours = useCallback((h: number) => {
+    setDraft((prev) => ({ ...prev, maxHours: h, minHours: Math.min(prev.minHours, h) }));
+  }, []);
+
   // Toggling is keyed on the candidate KEY (identity, else name) so two
   // same-named contacts stay distinct and a rename can't orphan a pick.
   const toggleEntryRef = useCallback(
@@ -1123,11 +1162,31 @@ export default function NewSlotSheet() {
             </section>
             )}
 
+            {/* How long the activity should run. The pair is enforced ordered
+                on every change; the bounds feed the events engine (a set is
+                only viable when everyone's bounds are mutually satisfiable,
+                and an event can't start where the binding minimum wouldn't
+                fit the shared window) AND the ballot below (starts too close
+                to the window's end to fit the minimum aren't offered). */}
+            {!isNewActivity && (
+              <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+                <HoursField label="Minimum Hours" value={draft.minHours} setValue={setMinHours} />
+                <HoursField
+                  label="Maximum Hours"
+                  value={draft.maxHours}
+                  setValue={setMaxHours}
+                  min={draft.minHours}
+                />
+              </section>
+            )}
+
             {/* Preferred start times, EDIT MODE ONLY (like who-with): the
                 time-poll bubble ballot over the slot's own window at 30-min
                 starts. Green = prefer, red = avoid; proposed events land on
                 the group's most-preferred viable start instead of always the
-                earliest. The drag-select toolbar rides above the z-60 sheet. */}
+                earliest. The drag-select toolbar rides above the z-60 sheet.
+                Bubbles are limited to starts the MINIMUM duration still fits
+                before the window closes. */}
             {!isNewActivity && prefOptions.length > 0 && (
               <div>
                 <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
