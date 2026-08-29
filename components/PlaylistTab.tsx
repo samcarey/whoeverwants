@@ -490,10 +490,10 @@ export default function PlaylistTab() {
               className="pointer-events-auto w-full max-w-sm rounded-3xl bg-white dark:bg-gray-800 p-4 shadow-2xl"
               role="dialog"
               aria-modal="true"
-              aria-label="Activities interests of others"
+              aria-label="Interests of others"
             >
               <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                Activities interests of others
+                Interests of others
               </h2>
               <ul className="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
                 {suggestList.map((s) => (

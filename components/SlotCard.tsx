@@ -381,14 +381,18 @@ function SlotCardImpl({
         </div>
         {/* pl-3 is the gutter between the two columns — the circles pack out
             to the cluster's edge, so the time text needs the room. Column
-            layout: the activity cluster, then (when there's anything to act
-            on) the Suggested chip beneath it — confined to THIS column, the
-            interests side, since it's about interests. */}
-        <div className="flex-1 min-w-0 flex flex-col items-center justify-center gap-2 pl-3 py-1">
+            layout: the activity cluster centered in whatever height the row
+            takes, then (when there's anything to act on) the Suggested chip
+            pinned to the BOTTOM — confined to THIS column, the interests side,
+            since it's about interests. The column carries no bottom padding,
+            so the chip bottoms out level with the last event card in the left
+            column and both get the card's own py-2 beneath them. */}
+        <div className="flex-1 min-w-0 flex flex-col items-center pl-3 pt-1">
           {/* Every circle is absolutely placed from the hex layout, so the box
-              only has to reserve the cluster's measured size. */}
+              only has to reserve the cluster's measured size. The wrapper takes
+              the slack so the cluster stays centered above the chip. */}
           <div
-            className="relative shrink-0"
+            className="relative shrink-0 my-auto"
             style={{ width: layout.width, height: layout.height }}
           >
             {activities.map((a, i) => (
@@ -446,7 +450,7 @@ function SlotCardImpl({
               type="button"
               onClick={() => onOpenSuggested(slot)}
               aria-label="Suggested activities"
-              className="flex max-w-full items-center gap-1 rounded-2xl bg-[var(--playlist-surface)] px-2.5 py-1 active:opacity-80 transition-opacity"
+              className="mt-1.5 shrink-0 flex max-w-full items-center gap-1 rounded-2xl bg-[var(--playlist-surface)] px-2.5 py-1 active:opacity-80 transition-opacity"
             >
               <span className="shrink-0 text-[9.5px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
                 Suggested
