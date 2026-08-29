@@ -463,21 +463,25 @@ def test_max_people_makes_the_event_full_until_someone_cancels(client):
     _create_slot(client, browser_id=b, day_time_windows=_dtw(day), activities=[act])
     _create_slot(client, browser_id=c, day_time_windows=_dtw(day), activities=[act])
 
-    assert _confirm(client, browser_id=a, day=day, activity=act).status_code == 200
+    r = _confirm(client, browser_id=a, day=day, activity=act)
+    assert r.status_code == 200
+    p1 = r.json()["id"]
     assert _confirm(client, browser_id=b, day=day, activity=act).json()["met"]
 
-    # C's view flips to Full — joining would blow past A's maximum.
-    ev = _events(client, browser_id=c)[0]
+    # A's pair is Full for C — joining would blow past A's maximum.
+    ev = next(e for e in _events(client, browser_id=c) if e["id"] == p1)
     assert not ev["can_confirm"] and not ev["viewer_confirmed"]
-    # The server is the real gate, not the FE's advisory flag.
-    assert _confirm(client, browser_id=c, day=day, activity=act).status_code == 409
+    # The server is the real gate, not the FE's advisory flag: targeting the
+    # full party directly is refused (a bare confirm would instead mint C's
+    # own solo party — the spawn-a-second-event base case).
+    assert _confirm(client, browser_id=c, day=day, activity=act, event_id=p1).status_code == 409
 
-    # B cancels → capacity frees → C can join.
+    # B cancels → capacity frees → C can join A's party.
     r = _confirm(client, browser_id=b, day=day, activity=act, confirmed=False)
     assert r.status_code == 200 and not r.json()["viewer_confirmed"]
-    ev = _events(client, browser_id=c)[0]
+    ev = next(e for e in _events(client, browser_id=c) if e["id"] == p1)
     assert ev["can_confirm"]
-    assert _confirm(client, browser_id=c, day=day, activity=act).status_code == 200
+    assert _confirm(client, browser_id=c, day=day, activity=act, event_id=p1).status_code == 200
 
 
 def test_confirmed_members_exclusion_gates_a_late_joiner(client):
