@@ -158,11 +158,19 @@ def test_viable_with_reaches_minimum_via_third_person():
     assert _preferred_viable_start(a, [b, c], {}) == 540
 
 
+def test_solo_viewer_with_default_minimum_is_viable_alone():
+    """No global two-person floor: a viewer whose "At Least" is "Just me"
+    (the default) can gather alone; an explicit minimum of 2 can't."""
+    assert _preferred_viable_start(_cand("a"), [], {}) == 540
+    assert _preferred_viable_start(_cand("a", min_people=2), [], {}) is None
+
+
 def test_earliest_viable_start_is_the_min_headcount_time():
-    """A pair could start at 9:00; the trio only at noon. B's minimum of 2 is
-    met by the pair, so 9:00 is "the earliest time that allows the minimum
-    amount of people to attend" — the trio's later window doesn't drag it."""
-    a = _cand("a", windows=[(540, 1020)])
+    """A pair could start at 9:00; the trio only at noon. A needs company
+    (min 2) so the singleton doesn't shortcut; B's minimum of 2 is met by the
+    pair, so 9:00 is "the earliest time that allows the minimum amount of
+    people to attend" — the trio's later window doesn't drag it."""
+    a = _cand("a", windows=[(540, 1020)], min_people=2)
     b = _cand("b", windows=[(540, 1020)], min_people=2)
     c = _cand("c", windows=[(720, 1020)])
     assert _preferred_viable_start(a, [b, c], {}) == 540
@@ -240,8 +248,8 @@ def test_start_cannot_outlast_someones_window():
 def test_growth_that_breaks_the_fit_falls_back_to_the_fitting_pair():
     """The trio's extra member squeezes the shared window below the binding
     minimum, so the viable pick is the pair — duration gating composes with
-    the subset walk."""
-    a = _cand("a", windows=[(540, 1020)], min_dur=240)  # needs 4h
+    the subset walk. A needs company (min 2) so going alone isn't the out."""
+    a = _cand("a", windows=[(540, 1020)], min_dur=240, min_people=2)  # needs 4h
     b = _cand("b", windows=[(540, 1020)])
     c = _cand("c", windows=[(540, 720)])  # only 9–12 — a trio has just 3h
     assert _preferred_viable_start(a, [b, c], {}) == 540
@@ -253,7 +261,8 @@ def test_growth_that_breaks_the_fit_falls_back_to_the_fitting_pair():
 def test_needed_more_requires_a_fitting_window():
     """More people can't stretch a too-short window: a solo whose own window
     can't hold their minimum gets NO near-miss (nothing would fix it)."""
-    a = _cand("a", windows=[(540, 660)], min_dur=240)  # 2h window, wants 4h
+    # min_people 2 so the solo isn't simply viable outright.
+    a = _cand("a", windows=[(540, 660)], min_dur=240, min_people=2)  # 2h window, wants 4h
     assert _needed_more(a, [], {}) is None
     # With a fitting window the near-miss math is unchanged.
     a.min_dur = 60
@@ -261,8 +270,11 @@ def test_needed_more_requires_a_fitting_window():
 
 
 def test_needed_more_counts_the_gap():
-    # Alone: one more person reaches MIN_EVENT_PEOPLE.
-    assert _needed_more(_cand("a"), [], {}) == 1
+    # Alone with the default "Just me" minimum: viable outright, no near-miss
+    # (the fresh confirmable card handles it).
+    assert _needed_more(_cand("a"), [], {}) is None
+    # Alone but wanting company: one short.
+    assert _needed_more(_cand("a", min_people=2), [], {}) == 1
     # A minimum of 4 with one compatible other: two short.
     a = _cand("a", min_people=4)
     assert _needed_more(a, [_cand("b")], {}) == 2
@@ -274,7 +286,7 @@ def test_needed_more_counts_the_gap():
 # --- API ---------------------------------------------------------------------
 
 
-def test_two_overlapping_slots_propose_an_event_and_meet_on_two_confirms(client):
+def test_two_overlapping_slots_propose_an_event_and_pair_up(client):
     a, b = str(uuid.uuid4()), str(uuid.uuid4())
     day = _day(1)
     act = _act("Hiking")
@@ -291,7 +303,8 @@ def test_two_overlapping_slots_propose_an_event_and_meet_on_two_confirms(client)
     r = _confirm(client, browser_id=a, day=day, activity=act)
     assert r.status_code == 200, r.text
     assert r.json()["viewer_confirmed"] and r.json()["confirmed_count"] == 1
-    assert not r.json()["met"]  # one person isn't an event
+    # A's "At Least" defaults to "Just me" → going alone already counts.
+    assert r.json()["met"]
 
     r = _confirm(client, browser_id=b, day=day, activity=act.lower())
     assert r.status_code == 200
@@ -332,31 +345,39 @@ def test_duration_bounds_shape_events_end_to_end(client):
     a, b = str(uuid.uuid4()), str(uuid.uuid4())
     day = _day(1)
     act = _act("Museum")
-    # A: 12–5 wanting >=2h. B: 12–2 → the overlap is exactly 2h, so the ONLY
+    # A: 12–5 wanting >=2h WITH company (min 2, so going alone at the liked
+    # start isn't the out). B: 12–2 → the overlap is exactly 2h, so the ONLY
     # viable start is noon; anything later would outlast B's window.
     _create_slot(
         client, browser_id=a, day_time_windows=_dtw(day, "12:00", "17:00"),
-        activities=[{"name": act, "min_hours": 2, "time_prefs": {"liked": ["13:00"], "disliked": []}}],
+        activities=[{
+            "name": act, "min_hours": 2,
+            "who_with": [{"min_people": 2}],
+            "time_prefs": {"liked": ["13:00"], "disliked": []},
+        }],
     )
     _create_slot(client, browser_id=b, day_time_windows=_dtw(day, "12:00", "14:00"), activities=[act])
     ev = _events(client, browser_id=a)[0]
     # A's liked 13:00 would run to 15:00 — past B's window — so it's ignored.
     assert ev["needed"] == 0 and ev["time"] == "12:00"
 
-    # An incompatible duration pair never proposes.
+    # An incompatible duration pair can never gather TOGETHER: C (wants >=3h
+    # with company) degrades to a near-miss — D doesn't count toward it —
+    # while D (no company requirement) still gets their own solo-viable card.
     act2 = _act("Golf")
     c, d = str(uuid.uuid4()), str(uuid.uuid4())
     _create_slot(
         client, browser_id=c, day_time_windows=_dtw(day),
-        activities=[{"name": act2, "min_hours": 3}],
+        activities=[{"name": act2, "min_hours": 3, "who_with": [{"min_people": 2}]}],
     )
     _create_slot(
         client, browser_id=d, day_time_windows=_dtw(day),
         activities=[{"name": act2, "max_hours": 2}],
     )
-    for bid in (c, d):
-        evs = [e for e in _events(client, browser_id=bid) if e["activity"] == act2]
-        assert len(evs) == 1 and evs[0]["needed"] == 1 and not evs[0]["can_confirm"]
+    c_evs = [e for e in _events(client, browser_id=c) if e["activity"] == act2]
+    assert len(c_evs) == 1 and c_evs[0]["needed"] == 1 and not c_evs[0]["can_confirm"]
+    d_evs = [e for e in _events(client, browser_id=d) if e["activity"] == act2]
+    assert len(d_evs) == 1 and d_evs[0]["needed"] == 0 and d_evs[0]["can_confirm"]
 
 
 def test_joiner_whose_minimum_cannot_fit_is_locked_out(client):
@@ -380,13 +401,15 @@ def test_joiner_whose_minimum_cannot_fit_is_locked_out(client):
 
 
 def test_non_overlapping_windows_propose_a_near_miss(client):
-    """No shared window → no viable event, but each declarer sees a "needs 1
-    more" near-miss for their own activity rather than nothing."""
+    """No shared window → no JOINT event. Both want company (min 2), so each
+    declarer sees a "needs 1 more" near-miss rather than nothing (the
+    incompatible other doesn't count toward it)."""
     a, b = str(uuid.uuid4()), str(uuid.uuid4())
     day = _day(1)
     act = _act("Chess")
-    _create_slot(client, browser_id=a, day_time_windows=_dtw(day, "09:00", "12:00"), activities=[act])
-    _create_slot(client, browser_id=b, day_time_windows=_dtw(day, "13:00", "17:00"), activities=[act])
+    wants_company = [{"name": act, "who_with": [{"min_people": 2}]}]
+    _create_slot(client, browser_id=a, day_time_windows=_dtw(day, "09:00", "12:00"), activities=wants_company)
+    _create_slot(client, browser_id=b, day_time_windows=_dtw(day, "13:00", "17:00"), activities=wants_company)
     for bid in (a, b):
         evs = _events(client, browser_id=bid)
         assert len(evs) == 1
@@ -394,16 +417,37 @@ def test_non_overlapping_windows_propose_a_near_miss(client):
         assert ev["needed"] == 1 and not ev["can_confirm"] and ev["time"] is None
 
 
-def test_solo_candidate_sees_a_near_miss(client):
-    """The classic dead end — you declared, nobody else has it — now reads
-    "needs 1 more" instead of an empty timeline."""
+def test_solo_candidate_can_go_alone(client):
+    """You declared, nobody else has it, and your "At Least" is the default
+    "Just me" → a confirmable event, and confirming it means it's ON. An
+    event still happens if only one person goes."""
     a = str(uuid.uuid4())
+    day = _day(1)
     act = _act("Reading")
-    _create_slot(client, browser_id=a, day_time_windows=_dtw(_day(1)), activities=[act])
+    _create_slot(client, browser_id=a, day_time_windows=_dtw(day), activities=[act])
+    evs = _events(client, browser_id=a)
+    assert len(evs) == 1
+    ev = evs[0]
+    assert ev["needed"] == 0 and ev["can_confirm"] and not ev["met"]
+    assert ev["time"] == "09:00"
+    r = _confirm(client, browser_id=a, day=day, activity=act)
+    assert r.status_code == 200, r.text
+    assert r.json()["met"] and r.json()["confirmed_count"] == 1
+
+
+def test_solo_candidate_wanting_company_sees_a_near_miss(client):
+    """The dead end that remains a dead end: alone AND your minimum needs a
+    second person → "needs 1 more", not confirmable."""
+    a = str(uuid.uuid4())
+    act = _act("Doubles")
+    _create_slot(
+        client, browser_id=a, day_time_windows=_dtw(_day(1)),
+        activities=[{"name": act, "who_with": [{"min_people": 2}]}],
+    )
     evs = _events(client, browser_id=a)
     assert len(evs) == 1
     assert evs[0]["needed"] == 1 and not evs[0]["can_confirm"] and not evs[0]["met"]
-    # Not confirmable yet — the server gates it, not just the FE flag.
+    # Not confirmable — the server gates it, not just the FE flag.
     assert _confirm(client, browser_id=a, day=_day(1), activity=act).status_code == 409
 
 
@@ -482,12 +526,18 @@ def test_pairwise_impossible_event_is_not_proposed(client):
     act = _act("Darts")
     _create_slot(
         client, browser_id=a, day_time_windows=_dtw(day),
-        activities=[{"name": act, "who_with": [{"exclude_people": [{"id": c_uid, "name": "Cal"}]}]}],
+        activities=[{
+            "name": act,
+            "who_with": [{"min_people": 2, "exclude_people": [{"id": c_uid, "name": "Cal"}]}],
+        }],
     )
-    _create_slot(client, browser_id=c, day_time_windows=_dtw(day), activities=[act])
-    # The only possible pair violates A's exclusion → no VIABLE event for
-    # anyone; both fall back to a near-miss (the incompatible other doesn't
-    # count toward it).
+    _create_slot(
+        client, browser_id=c, day_time_windows=_dtw(day),
+        activities=[{"name": act, "who_with": [{"min_people": 2}]}],
+    )
+    # Both want company, but the only possible pair violates A's exclusion →
+    # no VIABLE event for anyone; both fall back to a near-miss (the
+    # incompatible other doesn't count toward it).
     for bid in (a, c):
         evs = _events(client, browser_id=bid)
         assert len(evs) == 1 and evs[0]["needed"] == 1 and not evs[0]["can_confirm"]
@@ -502,10 +552,12 @@ def test_minimum_people_gates_the_proposal_until_a_third_arrives(client):
         activities=[{"name": act, "who_with": [{"min_people": 3}]}],
     )
     _create_slot(client, browser_id=b, day_time_windows=_dtw(day), activities=[act])
-    # Two candidates can't reach A's minimum of 3 → no viable event yet, but
-    # both see the near-miss: one more person makes it work.
+    # Two candidates can't reach A's minimum of 3 → no viable event for A yet,
+    # so A sees the near-miss: one more person makes it work. B (default
+    # "Just me" minimum) is solo-viable regardless, so B gets a fresh card.
     assert [e["needed"] for e in _events(client, browser_id=a)] == [1]
-    assert [e["needed"] for e in _events(client, browser_id=b)] == [1]
+    b_evs = _events(client, browser_id=b)
+    assert [e["needed"] for e in b_evs] == [0] and b_evs[0]["can_confirm"]
 
     _create_slot(client, browser_id=c, day_time_windows=_dtw(day), activities=[act])
     evs = _events(client, browser_id=a)
@@ -635,8 +687,9 @@ def test_deleting_the_slot_drops_the_confirmation_from_the_math(client):
     assert _events(client, browser_id=b)[0]["met"]
 
     # A deletes their slot → A is no longer a candidate; their stale
-    # confirmation stops counting and the event un-meets.
+    # confirmation stops counting. B's solo confirmation stands on its own
+    # (default "Just me" minimum → still a met event of one).
     r = client.delete(f"/api/slots/{slot_id}", headers=bid_headers(a))
     assert r.status_code == 204
     ev = _events(client, browser_id=b)[0] if _events(client, browser_id=b) else None
-    assert ev is None or (ev["confirmed_count"] == 1 and not ev["met"])
+    assert ev is None or ev["confirmed_count"] == 1

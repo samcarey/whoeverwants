@@ -31,8 +31,11 @@ holds:
 
 Per-party flags the UI depends on:
 
-  * `met`      — the party's confirmed set (≥2 people) satisfies every
-                 member's full condition, minimums included. The event is on.
+  * `met`      — the party's confirmed set satisfies every member's full
+                 condition, minimums included. The event is on. There is NO
+                 global headcount floor: a solo confirmer whose "At Least" is
+                 "Just me" (min_people <= 1, the default) is a met event —
+                 an event still happens if only one person goes.
   * `can_confirm` — adding the viewer would not break any confirmed member's
                  condition (maximums / include / exclude / common window;
                  minimums are exempt — satisfied by growth, not violated by
@@ -63,8 +66,10 @@ from services.slots import _hhmm_to_minutes, _windows_by_day, normalize_activity
 # from the SEARCH only (confirmed-set math is exact regardless). 2^14 = 16k
 # subset checks worst case.
 MAX_SEARCH_CANDIDATES = 14
-# An event needs at least two people — a party of one is just your slot.
-MIN_EVENT_PEOPLE = 2
+# There is NO global headcount floor: each member's own "At Least" minimum
+# (min_people, default 1 = "Just me") is the floor. An event still happens if
+# only one person goes — that's the point of allowing "Me" in the "At Least"
+# field, so a solo confirmation with min_people <= 1 makes the event met.
 
 
 @dataclass
@@ -295,8 +300,9 @@ def _preferred_viable_start(
     others: list[_Candidate],
     members: dict[str, set[str]],
 ) -> int | None:
-    """The best start minute at which SOME subset containing the viewer (size ≥
-    MIN_EVENT_PEOPLE, everyone's condition holding — minimums included) could
+    """The best start minute at which SOME subset containing the viewer (the
+    singleton included — going alone is legitimate when the viewer's own
+    minimum allows it; everyone's condition holding, minimums included) could
     gather; None when no such subset exists (→ the event isn't proposed).
     Pre-filters to candidates mutually compatible with the viewer (a member of
     a valid set must be), then brute-forces subsets, scoring each viable one's
@@ -312,10 +318,10 @@ def _preferred_viable_start(
     ][: MAX_SEARCH_CANDIDATES - 1]
     best: tuple[int, int, int] | None = None
     best_start: int | None = None
-    for mask in range(1, 1 << len(pool)):
+    # From 0: the singleton {viewer} is a viable gathering whenever their own
+    # minimum is "Just me" — no global two-person floor.
+    for mask in range(0, 1 << len(pool)):
         subset = [viewer] + [o for i, o in enumerate(pool) if mask >> i & 1]
-        if len(subset) < MIN_EVENT_PEOPLE:
-            continue
         if not _constraints_ok(subset, members, require_min=True):
             continue
         commons = _common_windows(subset)
@@ -360,7 +366,7 @@ def _needed_more(
         if not _fitting_windows(subset):
             continue
         n = len(subset)
-        need = max(MIN_EVENT_PEOPLE, max(c.min_people for c in subset)) - n
+        need = max(c.min_people for c in subset) - n
         if need <= 0:
             continue  # viable outright — the fresh card handles it
         caps = [c.max_people for c in subset if c.max_people is not None]
@@ -562,9 +568,10 @@ def _party_payload(
         joined = confirmed + [viewer]
         can_confirm = _set_ok(joined, members, require_min=False)
 
-    met = len(confirmed) >= MIN_EVENT_PEOPLE and _set_ok(
-        confirmed, members, require_min=True
-    )
+    # Met = the people actually going satisfy every one of THEIR conditions,
+    # minimums included. A solo confirmer whose "At Least" is "Just me" IS a
+    # met event — going alone counts; there is no global two-person floor.
+    met = bool(confirmed) and _set_ok(confirmed, members, require_min=True)
 
     # The "@ time" on the card: once the event is ON it's the best-preferred
     # start the people actually going all share; until then it's the
