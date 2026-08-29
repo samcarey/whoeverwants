@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * "Minimum Hours" / "Maximum Hours" duration picker on a slot activity. One-
+ * "Minimum Duration" / "Maximum Duration" picker on a slot activity. One-
  * row field (h-12, the bottom-card settings idiom): label left, the selected
  * value right, with an invisible native <select> overlaid — the
  * PartyCountField / ScoringAlgorithmField pattern.
@@ -14,7 +14,7 @@
 export const HOURS_OPTIONS = [0.5, 1, 1.5, 2, 3, 4, 5, 6, 8] as const;
 
 export function hoursLabel(h: number): string {
-  return `${h}h`;
+  return `${h} hours`;
 }
 
 interface HoursFieldProps {

@@ -1170,9 +1170,9 @@ export default function NewSlotSheet() {
                 to the window's end to fit the minimum aren't offered). */}
             {!isNewActivity && (
               <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
-                <HoursField label="Minimum Hours" value={draft.minHours} setValue={setMinHours} />
+                <HoursField label="Minimum Duration" value={draft.minHours} setValue={setMinHours} />
                 <HoursField
-                  label="Maximum Hours"
+                  label="Maximum Duration"
                   value={draft.maxHours}
                   setValue={setMaxHours}
                   min={draft.minHours}
