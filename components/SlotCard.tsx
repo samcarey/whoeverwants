@@ -446,7 +446,11 @@ function SlotCardImpl({
               <span className="shrink-0 text-[9.5px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
                 Suggested
               </span>
-              <span className="min-w-0 truncate text-[15px] leading-none">
+              {/* No leading-none here: emoji draw taller than a 1em line box,
+                  and truncate's overflow-hidden was shaving their tops and
+                  bottoms. A normal line height gives the glyphs headroom;
+                  truncate then only crops horizontally. */}
+              <span className="min-w-0 truncate text-[15px] leading-normal">
                 {suggested.map((s) => activitySymbol(s.name, s.emoji ?? null)).join(" ")}
               </span>
             </button>
