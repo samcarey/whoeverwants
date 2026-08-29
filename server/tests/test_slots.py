@@ -476,7 +476,11 @@ def test_suggestions_respect_the_suggesters_who_with(client):
     open_act, crew_act, bff_act, noc_act = (
         f"Open {tag}", f"Crew {tag}", f"BFF {tag}", f"NoCal {tag}",
     )
-    day = _day(1)
+    # A pseudo-random far-future day: the persistent dev DB accumulates test
+    # slots on the common _day(1), and the 15-per-group cap can rank this
+    # test's fresh count-1 activities out of the overlapping group entirely.
+    # A day (almost) nobody else's slots touch keeps the group all ours.
+    day = _day(60 + int(tag[:2], 16))
     r = _create_slot(
         client,
         browser_id=a,
