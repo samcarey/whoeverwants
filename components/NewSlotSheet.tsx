@@ -1027,6 +1027,20 @@ export default function NewSlotSheet() {
               )}
             </button>
           </div>
+          {/* How far this activity is from actually happening ("Needs N
+              more"), right under the sheet title. The slot is ALWAYS
+              reserved while editing an activity — same height whether the
+              bubble is there or not — so the cards below never shift as the
+              count loads, appears, or clears. */}
+          {showActivity && !isNewActivity && (
+            <div aria-live="polite" className="shrink-0 h-8 flex items-start justify-center">
+              {neededMore > 0 && (
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                  Needs {neededMore} more {neededMore === 1 ? "person" : "people"}
+                </span>
+              )}
+            </div>
+          )}
           <div
             ref={sheetScrollerNodeRef}
             className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-none px-3 pb-6 space-y-[14.4px]"
@@ -1112,18 +1126,6 @@ export default function NewSlotSheet() {
             {showActivity && (<>
             {/* Emoji + name — the activity itself. */}
             {activityField}
-
-            {/* How far this activity is from actually happening. It sits
-                under the name rather than on the timeline: with nobody to
-                gather yet there's nothing to confirm, so it's information
-                about THIS activity, not an event card. */}
-            {neededMore > 0 && (
-              <div className="flex justify-center">
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                  Needs {neededMore} more {neededMore === 1 ? "person" : "people"}
-                </span>
-              </div>
-            )}
 
             {/* The activity's who-with condition, EDIT MODE ONLY — adding is
                 just "which activity?", and you tap the activity afterward to
