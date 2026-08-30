@@ -539,10 +539,18 @@ def _load_event_polls(conn, days: list[str]) -> dict[tuple[str, str], dict]:
         """
         SELECT sep.day::text AS day, LOWER(sep.activity) AS key, sep.title,
                p.short_id AS poll_short_id, p.is_closed,
-               g.short_id AS group_short_id
+               g.short_id AS group_short_id,
+               q.category_icon, q.category, q.question_type
           FROM slot_event_polls sep
           JOIN polls p ON p.id = sep.poll_id
           LEFT JOIN groups g ON g.id = p.group_id
+          LEFT JOIN LATERAL (
+                 SELECT category_icon, category, question_type
+                   FROM questions
+                  WHERE poll_id = p.id
+                  ORDER BY question_index NULLS LAST, created_at
+                  LIMIT 1
+               ) q ON true
          WHERE sep.day = ANY(%(days)s::date[])
         """,
         {"days": days},
@@ -553,6 +561,12 @@ def _load_event_polls(conn, days: list[str]) -> dict[tuple[str, str], dict]:
             "group_short_id": r["group_short_id"],
             "title": r["title"],
             "is_closed": bool(r["is_closed"]),
+            # The question's own icon fields so the FE renders the SAME emoji
+            # the poll creation form / attached draft chose (getCategoryIcon's
+            # inputs: explicit icon → built-in category icon → type symbol).
+            "category_icon": r["category_icon"],
+            "category": r["category"],
+            "question_type": r["question_type"],
         }
         for r in rows
     }

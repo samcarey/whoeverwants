@@ -30,7 +30,9 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import InitialBubble from "@/components/InitialBubble";
 import SimpleCountdown from "@/components/SimpleCountdown";
-import type { ActivitySuggestion, Slot, SlotEvent } from "@/lib/api/slots";
+import type { ActivitySuggestion, Slot, SlotEvent, SlotEventPoll } from "@/lib/api/slots";
+import { getCategoryIcon } from "@/lib/questionListUtils";
+import type { Question } from "@/lib/types";
 import {
   activityColor,
   clusterLayout,
@@ -68,6 +70,17 @@ interface SlotCardProps {
  *  back to end-of-day when the card has no "@ time" yet. */
 export function eventStartIso(ev: SlotEvent): string {
   return new Date(`${ev.day}T${ev.time ?? "23:59"}:00`).toISOString();
+}
+
+/** The emoji a poll surfaces everywhere else — the creator's chosen
+ *  category_icon, else the built-in category icon, else the question-type
+ *  symbol (getCategoryIcon's rule, fed from the events payload). */
+export function eventPollIcon(p: SlotEventPoll): string {
+  return getCategoryIcon({
+    category_icon: p.category_icon ?? undefined,
+    category: p.category ?? undefined,
+    question_type: p.question_type ?? "ranked_choice",
+  } as Question);
 }
 
 /** "HH:MM" → a compact 12h clock ("2 PM", "2:30 PM"). */
@@ -254,7 +267,7 @@ function EventCard({
             poll's Vote button lives. */}
         {ev.poll && !ev.poll.is_closed && (
           <span className="flex items-center gap-1 min-w-0 text-[11px] font-normal text-gray-500 dark:text-gray-400">
-            <span aria-hidden="true">📊</span>
+            <span aria-hidden="true">{eventPollIcon(ev.poll)}</span>
             <span className="min-w-0 truncate">{ev.poll.title ?? "Poll"}</span>
             <span className="ml-auto shrink-0 tabular-nums">
               <SimpleCountdown

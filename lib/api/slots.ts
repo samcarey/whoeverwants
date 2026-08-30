@@ -233,6 +233,11 @@ export interface SlotEventPoll {
   group_short_id: string | null;
   title: string | null;
   is_closed: boolean;
+  /** The poll question's icon fields — feed `getCategoryIcon` so surfaces
+   *  show the SAME emoji the poll creation form / attached draft chose. */
+  category_icon?: string | null;
+  category?: string | null;
+  question_type?: string | null;
 }
 
 /** Last-resolved events list — the same first-commit-paint role cachedSlots
@@ -272,4 +277,84 @@ export async function apiGetActivitySuggestions(
     method: "POST",
     body: JSON.stringify({ day_time_windows: dayTimeWindows }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Event comments (migration 157) — the poll-comments wire shape keyed on the
+// event's (day, activity) identity. Returned as `PollComment` objects so the
+// shared <PollComments> component renders them verbatim (poll_id rides empty;
+// mentions are always [] — event threads have no @mention story yet).
+// ---------------------------------------------------------------------------
+
+import type { PollComment, PollCommentReaction } from "./polls";
+
+function toEventComment(data: {
+  id: string;
+  commenter_name: string;
+  user_id?: string | null;
+  body: string;
+  created_at?: string | null;
+  edited_at?: string | null;
+  reactions?: PollCommentReaction[] | null;
+  is_mine?: boolean;
+}): PollComment {
+  return {
+    id: data.id,
+    poll_id: "",
+    commenter_name: data.commenter_name,
+    user_id: data.user_id ?? null,
+    body: data.body,
+    created_at: data.created_at ?? "",
+    edited_at: data.edited_at ?? null,
+    mentions: [],
+    reactions: Array.isArray(data.reactions) ? data.reactions : [],
+    is_mine: data.is_mine === true,
+  };
+}
+
+const eventCommentPath = (day: string, activity: string) =>
+  `/events/comments?day=${encodeURIComponent(day)}&activity=${encodeURIComponent(activity)}`;
+
+export async function apiGetEventComments(day: string, activity: string): Promise<PollComment[]> {
+  const data = await slotFetch<Parameters<typeof toEventComment>[0][]>(
+    eventCommentPath(day, activity),
+    { method: "GET" },
+  );
+  return (data ?? []).map(toEventComment);
+}
+
+export async function apiCreateEventComment(
+  day: string,
+  activity: string,
+  name: string,
+  body: string,
+): Promise<PollComment> {
+  const data = await slotFetch<Parameters<typeof toEventComment>[0]>("/events/comments", {
+    method: "POST",
+    body: JSON.stringify({ day, activity, commenter_name: name, body }),
+  });
+  return toEventComment(data);
+}
+
+export async function apiUpdateEventComment(commentId: string, body: string): Promise<PollComment> {
+  const data = await slotFetch<Parameters<typeof toEventComment>[0]>(
+    `/events/comments/${encodeURIComponent(commentId)}`,
+    { method: "PUT", body: JSON.stringify({ body }) },
+  );
+  return toEventComment(data);
+}
+
+export async function apiDeleteEventComment(commentId: string): Promise<void> {
+  await slotFetch<void>(`/events/comments/${encodeURIComponent(commentId)}`, { method: "DELETE" });
+}
+
+export async function apiToggleEventCommentReaction(
+  commentId: string,
+  emoji: string,
+): Promise<PollCommentReaction[]> {
+  const data = await slotFetch<PollCommentReaction[]>(
+    `/events/comments/${encodeURIComponent(commentId)}/reactions`,
+    { method: "POST", body: JSON.stringify({ emoji }) },
+  );
+  return Array.isArray(data) ? data : [];
 }

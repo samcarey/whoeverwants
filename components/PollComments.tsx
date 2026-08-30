@@ -14,6 +14,7 @@ import {
   apiTogglePollCommentReaction,
   apiUpdatePollComment,
   type PollComment,
+  type PollCommentReaction,
 } from "@/lib/api";
 import { haptic } from "@/lib/haptics";
 import { relativeTime } from "@/lib/questionListUtils";
@@ -244,10 +245,30 @@ function CommentRow({
   );
 }
 
+/** The thread's backend, so the component isn't married to poll comments —
+ *  the event page (migration 157) passes its own adapter over the SAME
+ *  wire shape (`PollComment`); poll pages keep passing `pollId` and get the
+ *  default poll adapter. Callers MUST memoize a custom adapter (it keys the
+ *  refresh loop's effect). */
+export interface CommentsApi {
+  list: () => Promise<PollComment[]>;
+  create: (
+    name: string,
+    body: string,
+    mentionedUserIds: string[],
+  ) => Promise<PollComment>;
+  update: (commentId: string, body: string) => Promise<PollComment>;
+  remove: (commentId: string) => Promise<void>;
+  toggleReaction: (
+    commentId: string,
+    emoji: string,
+  ) => Promise<PollCommentReaction[]>;
+}
+
 /**
- * Poll-level comment thread (migrations 146/147), mounted at the bottom of
- * the poll detail page. Flat list, oldest first (chat order), with a composer
- * below. Posting is name-gated via the page's shared `gateOnName`
+ * Comment thread (migrations 146/147; events via 157), mounted at the bottom
+ * of the poll detail / event page. Flat list, oldest first (chat order), with
+ * a composer below. Posting is name-gated via the page's shared `gateOnName`
  * (AccountGateModal) — same policy as voting. Auto-refreshes every 5s while
  * visible (the group page's cadence) so threads feel live.
  */
@@ -255,14 +276,34 @@ export default function PollComments({
   pollId,
   groupId,
   gateOnName,
+  api,
 }: {
-  pollId: string;
+  /** The poll whose thread this is — drives the default (poll) adapter.
+   *  Omit when passing a custom `api`. */
+  pollId?: string;
   /** Group route id — resolves the member roster for @-mention autocomplete. */
   groupId?: string;
   /** The detail page's name gate: returns false (and opens the account
    *  modal) when no display name is saved; the retry replays the post. */
   gateOnName?: (retry: () => void) => boolean;
+  /** Custom thread backend (memoized by the caller); default = poll comments
+   *  bound to `pollId`. */
+  api?: CommentsApi;
 }) {
+  const commentsApi = useMemo<CommentsApi>(
+    () =>
+      api ?? {
+        list: () => apiGetPollComments(pollId!),
+        create: (name, body, mentionedUserIds) =>
+          apiCreatePollComment(pollId!, name, body, mentionedUserIds),
+        update: (commentId, body) =>
+          apiUpdatePollComment(pollId!, commentId, body),
+        remove: (commentId) => apiDeletePollComment(pollId!, commentId),
+        toggleReaction: (commentId, emoji) =>
+          apiTogglePollCommentReaction(pollId!, commentId, emoji),
+      },
+    [api, pollId],
+  );
   const [comments, setComments] = useState<PollComment[] | null>(null);
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -302,7 +343,7 @@ export default function PollComments({
 
     const load = async () => {
       try {
-        const list = await apiGetPollComments(pollId);
+        const list = await commentsApi.list();
         if (cancelled) return;
         setComments((prev) =>
           prev && signature(prev) === signature(list) ? prev : list,
@@ -336,7 +377,7 @@ export default function PollComments({
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [pollId]);
+  }, [commentsApi]);
 
   // Roster for @-mention autocomplete (cached + coalesced in the API layer).
   // Only accounts are mentionable — a push needs a user_id to target.
@@ -410,8 +451,7 @@ export default function PollComments({
       .filter(([, name]) => body.toLowerCase().includes(`@${name.toLowerCase()}`))
       .map(([userId]) => userId);
     try {
-      const created = await apiCreatePollComment(
-        pollId,
+      const created = await commentsApi.create(
         getUserName()?.trim() ?? "",
         body,
         mentionedUserIds,
@@ -443,7 +483,7 @@ export default function PollComments({
     if (!body) return;
     setEditing({ ...editing, saving: true });
     try {
-      const updated = await apiUpdatePollComment(pollId, editing.id, body);
+      const updated = await commentsApi.update(editing.id, body);
       setComments((prev) =>
         (prev ?? []).map((c) => (c.id === updated.id ? updated : c)),
       );
@@ -457,11 +497,7 @@ export default function PollComments({
   const toggleReaction = async (comment: PollComment, emoji: string) => {
     haptic.light();
     try {
-      const reactions = await apiTogglePollCommentReaction(
-        pollId,
-        comment.id,
-        emoji,
-      );
+      const reactions = await commentsApi.toggleReaction(comment.id, emoji);
       setComments((prev) =>
         (prev ?? []).map((c) =>
           c.id === comment.id ? { ...c, reactions } : c,
@@ -481,7 +517,7 @@ export default function PollComments({
     // restore on any other failure — the optimistic-remove convention.
     setComments((prev) => (prev ?? []).filter((c) => c.id !== target.id));
     try {
-      await apiDeletePollComment(pollId, target.id);
+      await commentsApi.remove(target.id);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) return;
       setComments((prev) => [...(prev ?? []), target]);

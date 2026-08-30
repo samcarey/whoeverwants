@@ -142,6 +142,19 @@ def update_comment(
     ).fetchone()
 
 
+# The reaction helpers below are shared by poll comments AND slot-event
+# comments (migration 157) — identical schema, different table. SQL
+# identifiers can't be bound params, so the table rides an explicit
+# whitelist (never caller-supplied text).
+REACTION_TABLES = frozenset({"poll_comment_reactions", "slot_event_comment_reactions"})
+
+
+def _reaction_table(table: str) -> str:
+    if table not in REACTION_TABLES:
+        raise ValueError(f"unknown reaction table: {table}")
+    return table
+
+
 MAX_MENTIONS = 20
 
 
@@ -188,14 +201,16 @@ def toggle_reaction(
     user_id: str | None,
     caller_bids: list[str],
     emoji: str,
+    table: str = "poll_comment_reactions",
 ) -> bool:
     """Toggle the caller's reaction: removes the ACCOUNT's existing rows for
     this (comment, emoji) — any linked browser, so toggling off works cross-
     device — else inserts one row keyed on the current browser (the votes
     convention: browser-keyed writes, account-aware reads). Returns True when
     the reaction was added, False when removed."""
+    tbl = _reaction_table(table)
     removed = conn.execute(
-        """DELETE FROM poll_comment_reactions
+        f"""DELETE FROM {tbl}
             WHERE comment_id = %(cid)s
               AND emoji = %(emoji)s
               AND (
@@ -213,7 +228,7 @@ def toggle_reaction(
     if removed:
         return False
     conn.execute(
-        """INSERT INTO poll_comment_reactions (comment_id, browser_id, user_id, emoji)
+        f"""INSERT INTO {tbl} (comment_id, browser_id, user_id, emoji)
            VALUES (%(cid)s, %(bid)s, %(uid)s, %(emoji)s)
            ON CONFLICT (comment_id, browser_id, emoji) DO NOTHING""",
         {"cid": comment_id, "bid": browser_id, "uid": user_id, "emoji": emoji},
@@ -227,6 +242,7 @@ def reactions_for_comments(
     *,
     caller_bids: list[str],
     actor_user_id: str | None,
+    table: str = "poll_comment_reactions",
 ) -> dict[str, list[dict]]:
     """Per-comment reaction summaries: {comment_id: [{emoji, count, mine}]},
     emojis in first-reacted order. `count` collapses an account's rows across
@@ -235,9 +251,9 @@ def reactions_for_comments(
     if not comment_ids:
         return {}
     rows = conn.execute(
-        """SELECT comment_id, emoji, browser_id::text AS browser_id,
+        f"""SELECT comment_id, emoji, browser_id::text AS browser_id,
                   user_id::text AS user_id, created_at
-             FROM poll_comment_reactions
+             FROM {_reaction_table(table)}
             WHERE comment_id = ANY(%(ids)s::uuid[])
             ORDER BY created_at, emoji""",
         {"ids": comment_ids},

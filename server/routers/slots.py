@@ -18,9 +18,25 @@ from pydantic import BaseModel, field_validator
 from database import get_db
 from middleware import browser_id_from_request as _browser_id
 from middleware import user_id_from_request as _user_id
-from services.auth import create_anonymous_user, resolve_actor_user_id
+from services.auth import caller_browser_ids, create_anonymous_user, resolve_actor_user_id
+from services.comments import (
+    comment_is_mine,
+    reactions_for_comments,
+    sanitize_comment_body,
+    toggle_reaction,
+)
 from services.contacts import reconcile_contacts
 from services.groups import require_uuid
+from services.slot_event_comments import (
+    create_event_comment,
+    delete_event_comment,
+    event_key,
+    get_event_comment,
+    is_event_candidate,
+    list_event_comments,
+    update_event_comment,
+)
+from services.validation import validate_category_icon, validate_user_name
 import logging
 
 from services.slot_events import (
@@ -277,6 +293,12 @@ class SlotEventPollInfo(BaseModel):
     group_short_id: str | None = None
     title: str | None = None
     is_closed: bool = False
+    # The poll question's icon fields — the FE derives the display emoji the
+    # same way poll surfaces do (explicit category_icon → built-in category
+    # icon → question-type symbol).
+    category_icon: str | None = None
+    category: str | None = None
+    question_type: str | None = None
 
 
 class SlotEventResponse(BaseModel):
@@ -359,6 +381,207 @@ def set_event_confirmation_endpoint(req: EventConfirmationRequest, request: Requ
         except EventFullError:
             raise HTTPException(status_code=409, detail="Full")
     return SlotEventResponse(**payload)
+
+
+# ---------------------------------------------------------------------------
+# Event comments (migration 157) — the poll-comments model keyed on the
+# event's (day, LOWER(activity)) identity. Candidates-only (the same people
+# who can see the event); reuses services/comments.py's ownership + reaction
+# machinery via its table-whitelisted helpers.
+# ---------------------------------------------------------------------------
+
+
+class SlotEventCommentReaction(BaseModel):
+    emoji: str
+    count: int
+    mine: bool
+
+
+class SlotEventCommentResponse(BaseModel):
+    id: str
+    commenter_name: str
+    user_id: str | None = None
+    body: str
+    created_at: str | None = None
+    edited_at: str | None = None
+    # Always empty — event threads have no @mention story yet; the field
+    # keeps the wire shape identical to poll comments so the FE component
+    # is shared verbatim.
+    mentions: list[dict] = []
+    reactions: list[SlotEventCommentReaction] = []
+    is_mine: bool = False
+
+
+class CreateEventCommentRequest(BaseModel):
+    day: str
+    activity: str
+    commenter_name: str | None = None
+    body: str
+
+
+class UpdateEventCommentRequest(BaseModel):
+    body: str
+
+
+class ToggleEventCommentReactionRequest(BaseModel):
+    emoji: str
+
+
+def _event_comment_identity(conn, request: Request) -> tuple[str | None, list[str]]:
+    """(resolved actor user_id, the caller's account-aware browser set) —
+    resolved once per request, the poll-comments convention."""
+    browser_id = _browser_id(request)
+    actor = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=browser_id)
+    bids = caller_browser_ids(conn, browser_id=browser_id, user_id=actor)
+    return actor, bids
+
+
+def _require_event_thread(conn, request: Request, day: str, activity: str) -> tuple[str, str, str | None, list[str]]:
+    """Gate the thread to the event's candidates (404 to anyone else,
+    indistinguishable from not-found) and return (day, key, actor, bids)."""
+    key_pair = event_key(day, activity)
+    if not key_pair:
+        raise HTTPException(status_code=404, detail="Event not found")
+    actor, bids = _event_comment_identity(conn, request)
+    if not is_event_candidate(conn, user_id=actor, day=key_pair[0], key=key_pair[1]):
+        raise HTTPException(status_code=404, detail="Event not found")
+    return key_pair[0], key_pair[1], actor, bids
+
+
+def _row_to_event_comment(
+    row: dict, *, is_mine: bool, reactions: list[dict] | None = None
+) -> SlotEventCommentResponse:
+    return SlotEventCommentResponse(
+        id=str(row["id"]),
+        commenter_name=row["commenter_name"],
+        user_id=str(row["user_id"]) if row.get("user_id") else None,
+        body=row["body"],
+        created_at=row["created_at"].isoformat() if row.get("created_at") else None,
+        edited_at=row["edited_at"].isoformat() if row.get("edited_at") else None,
+        reactions=[SlotEventCommentReaction(**r) for r in (reactions or [])],
+        is_mine=is_mine,
+    )
+
+
+_EVENT_REACTION_TABLE = "slot_event_comment_reactions"
+
+
+@router.get("/events/comments", response_model=list[SlotEventCommentResponse])
+def list_event_comments_endpoint(day: str, activity: str, request: Request):
+    with get_db() as conn:
+        d, key, actor, bids = _require_event_thread(conn, request, day, activity)
+        rows = list_event_comments(conn, day=d, key=key)
+        reactions = reactions_for_comments(
+            conn,
+            [str(r["id"]) for r in rows],
+            caller_bids=bids,
+            actor_user_id=actor,
+            table=_EVENT_REACTION_TABLE,
+        )
+    return [
+        _row_to_event_comment(
+            r,
+            is_mine=comment_is_mine(r, caller_bids=bids, actor_user_id=actor),
+            reactions=reactions.get(str(r["id"])),
+        )
+        for r in rows
+    ]
+
+
+@router.post("/events/comments", response_model=SlotEventCommentResponse, status_code=201)
+def create_event_comment_endpoint(req: CreateEventCommentRequest, request: Request):
+    """Post a comment on an event. Name-gated like poll comments
+    (validate_user_name backstop; AccountGateModal is the FE's UX); body
+    trimmed + silently capped, 400 when empty after trim."""
+    name = validate_user_name(req.commenter_name, field="Name")
+    body = sanitize_comment_body(req.body)
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment body is required")
+    with get_db() as conn:
+        d, _key, actor, _bids = _require_event_thread(conn, request, req.day, req.activity)
+        row = create_event_comment(
+            conn,
+            day=d,
+            activity=req.activity.strip(),
+            browser_id=_browser_id(request),
+            user_id=actor,
+            name=name,
+            body=body,
+        )
+    return _row_to_event_comment(row, is_mine=True)
+
+
+@router.put("/events/comments/{comment_id}", response_model=SlotEventCommentResponse)
+def update_event_comment_endpoint(
+    comment_id: str, req: UpdateEventCommentRequest, request: Request
+):
+    require_uuid(comment_id, "comment_id")
+    body = sanitize_comment_body(req.body)
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment body is required")
+    with get_db() as conn:
+        actor, bids = _event_comment_identity(conn, request)
+        row = update_event_comment(
+            conn, comment_id, caller_bids=bids, actor_user_id=actor, body=body
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        reactions = reactions_for_comments(
+            conn, [comment_id], caller_bids=bids, actor_user_id=actor,
+            table=_EVENT_REACTION_TABLE,
+        )
+    return _row_to_event_comment(
+        row, is_mine=True, reactions=reactions.get(comment_id)
+    )
+
+
+@router.delete("/events/comments/{comment_id}", status_code=204)
+def delete_event_comment_endpoint(comment_id: str, request: Request):
+    require_uuid(comment_id, "comment_id")
+    with get_db() as conn:
+        actor, bids = _event_comment_identity(conn, request)
+        if not delete_event_comment(
+            conn, comment_id, caller_bids=bids, actor_user_id=actor
+        ):
+            raise HTTPException(status_code=404, detail="Comment not found")
+
+
+@router.post(
+    "/events/comments/{comment_id}/reactions",
+    response_model=list[SlotEventCommentReaction],
+)
+def toggle_event_comment_reaction_endpoint(
+    comment_id: str, req: ToggleEventCommentReactionRequest, request: Request
+):
+    """Toggle the caller's emoji reaction (identity-light like poll comment
+    reactions — no name gate); candidacy of the comment's OWN event key gates
+    access. Returns the comment's updated reaction summary."""
+    require_uuid(comment_id, "comment_id")
+    emoji = validate_category_icon(req.emoji)
+    if not emoji:
+        raise HTTPException(status_code=400, detail="Reaction emoji is required")
+    with get_db() as conn:
+        row = get_event_comment(conn, comment_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        d, key, actor, bids = _require_event_thread(
+            conn, request, str(row["day"]), row["activity"]
+        )
+        del d, key
+        toggle_reaction(
+            conn,
+            comment_id,
+            browser_id=_browser_id(request),
+            user_id=actor,
+            caller_bids=bids,
+            emoji=emoji,
+            table=_EVENT_REACTION_TABLE,
+        )
+        reactions = reactions_for_comments(
+            conn, [comment_id], caller_bids=bids, actor_user_id=actor,
+            table=_EVENT_REACTION_TABLE,
+        )
+    return [SlotEventCommentReaction(**r) for r in reactions.get(comment_id, [])]
 
 
 @router.put("/{slot_id}", response_model=CreateSlotResponse)

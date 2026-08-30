@@ -28,17 +28,26 @@ import { navigateWithTransition } from "@/lib/viewTransitions";
 import { useSwipeBackGesture, useHeaderPortalRef } from "@/lib/useSwipeBackGesture";
 import { SHOW_HOME_BACKDROP_EVENT, HIDE_HOME_BACKDROP_EVENT } from "@/lib/eventChannels";
 import HeaderPortal from "@/components/HeaderPortal";
+import AccountGateModal from "@/components/AccountGateModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import EventPollCard from "@/components/EventPollCard";
 import InitialBubble from "@/components/InitialBubble";
-import SimpleCountdown from "@/components/SimpleCountdown";
+import PollComments, { type CommentsApi } from "@/components/PollComments";
 import { eventStartIso } from "@/components/SlotCard";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import { haptic } from "@/lib/haptics";
+import { isValidUserName } from "@/lib/nameValidation";
+import { getUserName } from "@/lib/userProfile";
 import { openSlotSheet, SLOTS_CHANGED_EVENT } from "@/lib/slotEvents";
 import {
+  apiCreateEventComment,
+  apiDeleteEventComment,
+  apiGetEventComments,
   apiGetSlotEvents,
   apiListSlots,
   apiSetEventConfirmation,
+  apiToggleEventCommentReaction,
+  apiUpdateEventComment,
   getCachedSlotEvents,
   getCachedSlots,
   type Slot,
@@ -73,6 +82,31 @@ function EventPageInner() {
   const [slots, setSlots] = useState<Slot[] | null>(() => getCachedSlots());
   const [busy, setBusy] = useState(false);
   const [confirmingBackOut, setConfirmingBackOut] = useState(false);
+  // Which expandable poll card is open (one at a time; null = all collapsed).
+  const [expandedPoll, setExpandedPoll] = useState<string | null>(null);
+  // Name gate for voting/commenting (the poll detail page's AccountGateModal
+  // pattern): the retry closure is stashed and replayed after the modal.
+  const [pendingNameRetry, setPendingNameRetry] = useState<(() => void) | null>(null);
+  const gateOnName = useCallback((retry: () => void): boolean => {
+    if (isValidUserName(getUserName())) return true;
+    setPendingNameRetry(() => retry);
+    return false;
+  }, []);
+
+  // The event's comment thread (migration 157) — the poll-comments component
+  // over the event-keyed backend. Memoized: the adapter keys the component's
+  // refresh loop.
+  const commentsApi = useMemo<CommentsApi>(
+    () => ({
+      list: () => apiGetEventComments(day, activity),
+      create: (name, body) => apiCreateEventComment(day, activity, name, body),
+      update: (commentId, body) => apiUpdateEventComment(commentId, body),
+      remove: (commentId) => apiDeleteEventComment(commentId),
+      toggleReaction: (commentId, emoji) =>
+        apiToggleEventCommentReaction(commentId, emoji),
+    }),
+    [day, activity],
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -293,46 +327,37 @@ function EventPageInner() {
                 )}
               </div>
 
-              {/* The gathering's poll (started from an attached activity
-                  draft the moment the event became possible). Voting happens
-                  on the poll's own page — this is the way in. */}
+              {/* The gathering's polls (started from attached activity
+                  drafts). Each poll is its own card with the ballot INLINE:
+                  two-option polls vote in one tap; bigger ballots expand
+                  (one at a time) into the drag-to-rank interface. */}
               {ev.poll && ev.poll.group_short_id && ev.poll.poll_short_id && (
                 <section className="mt-4">
                   <h2 className="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
                     Polls
                   </h2>
-                  <div className="rounded-3xl bg-gray-50 px-4 py-2.5 dark:bg-gray-800">
-                    <div className="flex items-center gap-2">
-                      <span aria-hidden="true" className="shrink-0 text-xl leading-none">📊</span>
-                      <span className="min-w-0 flex-1 truncate text-base text-gray-900 dark:text-gray-100">
-                        {ev.poll.title ?? "Poll"}
-                      </span>
-                      <span className="shrink-0 text-sm">
-                        {ev.poll.is_closed ? (
-                          <span className="text-gray-400 dark:text-gray-500">Closed</span>
-                        ) : (
-                          <SimpleCountdown
-                            deadline={eventStartIso(ev)}
-                            compact
-                            blankOnExpire
-                            colorClass="text-blue-600 dark:text-blue-400"
-                          />
-                        )}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigateWithTransition(
-                          router,
-                          `/g/${ev.poll!.group_short_id}/p/${ev.poll!.poll_short_id}`,
-                          "forward",
-                        )
-                      }
-                      className="mt-2 w-full rounded-2xl bg-blue-600 py-2 font-medium text-white transition active:bg-blue-700"
-                    >
-                      {ev.poll.is_closed ? "See Results" : "Vote"}
-                    </button>
+                  <div className="space-y-2">
+                    {[ev.poll].map((p) => (
+                      <EventPollCard
+                        key={p.poll_short_id}
+                        pollRef={p}
+                        eventIso={eventStartIso(ev)}
+                        expanded={expandedPoll === p.poll_short_id}
+                        onToggleExpand={() =>
+                          setExpandedPoll((cur) =>
+                            cur === p.poll_short_id ? null : p.poll_short_id,
+                          )
+                        }
+                        gateOnName={gateOnName}
+                        onOpenPoll={() =>
+                          navigateWithTransition(
+                            router,
+                            `/g/${p.group_short_id}/p/${p.poll_short_id}`,
+                            "forward",
+                          )
+                        }
+                      />
+                    ))}
                   </div>
                 </section>
               )}
@@ -367,6 +392,10 @@ function EventPageInner() {
                 </div>
               </section>
 
+              {/* The event's own comment thread (the poll-comments component
+                  over the event-keyed backend, migration 157) — candidates
+                  only, name-gated like posting anywhere else. */}
+              <PollComments api={commentsApi} gateOnName={gateOnName} />
             </>
           )}
         </div>
@@ -383,6 +412,17 @@ function EventPageInner() {
           void setConfirmed(false);
         }}
         onCancel={() => setConfirmingBackOut(false)}
+      />
+
+      <AccountGateModal
+        isOpen={!!pendingNameRetry}
+        message="to join in"
+        onSubmit={() => {
+          const retry = pendingNameRetry;
+          setPendingNameRetry(null);
+          if (retry) retry();
+        }}
+        onCancel={() => setPendingNameRetry(null)}
       />
     </>
   );
