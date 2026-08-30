@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { flushSync } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { ClientOnlyDragDrop } from './ClientOnly';
 import type { OptionsMetadata } from '@/lib/types';
 import OptionLabel, { isLocationEntry } from './OptionLabel';
@@ -1743,7 +1743,15 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       
 
       {/* Render dragged item if dragging */}
-      {dragState.isDragging && renderDraggedItem()}
+      {/* The drag overlay is position:fixed at pointer (viewport) coordinates,
+          but ballots mount inside swipe wrappers carrying will-change:
+          transform — which makes the WRAPPER the fixed child's containing
+          block, so on a scrolled page the overlay floats scrollY px above the
+          finger. Portal to document.body (the documented escape for
+          transformed/contained ancestors) so fixed means the viewport again. */}
+      {dragState.isDragging && typeof document !== 'undefined'
+        ? createPortal(renderDraggedItem(), document.body)
+        : null}
     </div>
   );
 
