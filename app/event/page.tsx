@@ -293,43 +293,13 @@ function EventPageInner() {
                 )}
               </div>
 
-              {/* Everyone wanting to go. */}
-              <section className="mt-4">
-                <h2 className="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
-                  Who&apos;s in
-                </h2>
-                <div className="rounded-3xl bg-gray-50 px-4 py-1.5 dark:bg-gray-800">
-                  {ev.viewer_confirmed || ev.confirmed_names.length > 0 ? (
-                    <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {ev.viewer_confirmed && (
-                        <li className="flex items-center gap-3 py-1.5">
-                          {/* name=null → the anonymous disc unless a profile
-                              photo is set (the /info members-list convention
-                              for the viewer's own row). */}
-                          <InitialBubble name={null} imageUrl={myImageUrl} sizeClassName="w-8 h-8" />
-                          <span className="text-gray-900 dark:text-gray-100">You</span>
-                        </li>
-                      )}
-                      {ev.confirmed_names.map((n, i) => (
-                        <li key={`${n}#${i}`} className="flex items-center gap-3 py-1.5">
-                          <InitialBubble name={n} sizeClassName="w-8 h-8" />
-                          <span className="text-gray-900 dark:text-gray-100">{n}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="py-1.5 text-gray-500 dark:text-gray-400">No one has confirmed yet.</p>
-                  )}
-                </div>
-              </section>
-
               {/* The gathering's poll (started from an attached activity
                   draft the moment the event became possible). Voting happens
                   on the poll's own page — this is the way in. */}
               {ev.poll && ev.poll.group_short_id && ev.poll.poll_short_id && (
                 <section className="mt-4">
                   <h2 className="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
-                    Poll
+                    Polls
                   </h2>
                   <div className="rounded-3xl bg-gray-50 px-4 py-2.5 dark:bg-gray-800">
                     <div className="flex items-center gap-2">
@@ -366,6 +336,36 @@ function EventPageInner() {
                   </div>
                 </section>
               )}
+
+              {/* Everyone wanting to go. */}
+              <section className="mt-4">
+                <h2 className="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
+                  Who&apos;s in
+                </h2>
+                <div className="rounded-3xl bg-gray-50 px-4 py-1.5 dark:bg-gray-800">
+                  {ev.viewer_confirmed || ev.confirmed_names.length > 0 ? (
+                    <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {ev.viewer_confirmed && (
+                        <li className="flex items-center gap-3 py-1.5">
+                          {/* name=null → the anonymous disc unless a profile
+                              photo is set (the /info members-list convention
+                              for the viewer's own row). */}
+                          <InitialBubble name={null} imageUrl={myImageUrl} sizeClassName="w-8 h-8" />
+                          <span className="text-gray-900 dark:text-gray-100">You</span>
+                        </li>
+                      )}
+                      {ev.confirmed_names.map((n, i) => (
+                        <li key={`${n}#${i}`} className="flex items-center gap-3 py-1.5">
+                          <InitialBubble name={n} sizeClassName="w-8 h-8" />
+                          <span className="text-gray-900 dark:text-gray-100">{n}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="py-1.5 text-gray-500 dark:text-gray-400">No one has confirmed yet.</p>
+                  )}
+                </div>
+              </section>
 
             </>
           )}
