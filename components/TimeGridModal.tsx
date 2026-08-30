@@ -192,6 +192,14 @@ export default function TimeGridModal({
         className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
         onClick={handleCancel}
         style={{ touchAction: 'none' }}
+        // ModalPortal renders to document.body, but React portals bubble
+        // events through the COMPONENT tree — so a downward wheel drag here
+        // would reach the host sheet's useSheetDismissGesture handlers and
+        // start collapsing the sheet behind the modal. Trap all touches.
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        onTouchCancel={(e) => e.stopPropagation()}
       >
         <div
           className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full mx-4 flex flex-col"

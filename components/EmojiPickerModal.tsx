@@ -76,6 +76,13 @@ export default function EmojiPickerModal({
       <div
         className="fixed inset-0 z-[80] flex items-center justify-center p-4"
         onClick={onClose}
+        // React portals bubble touches through the COMPONENT tree — trap them
+        // so a drag (e.g. scrolling the grid) can't reach a host sheet's
+        // swipe-down-to-dismiss gesture (see TimeGridModal's matching note).
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        onTouchCancel={(e) => e.stopPropagation()}
       >
         <div className="absolute inset-0 bg-black/50" />
         <div

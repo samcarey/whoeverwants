@@ -51,7 +51,16 @@ export default function ConfirmationModal({
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div
+        className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+        // React portals bubble touches through the COMPONENT tree — trap them
+        // so a drag on the backdrop can't collapse a host sheet's
+        // swipe-down-to-dismiss gesture (see TimeGridModal's matching note).
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        onTouchCancel={(e) => e.stopPropagation()}
+      >
         {/* Backdrop */}
         <div
           className="absolute inset-0 bg-black/50 dark:bg-black/70"
