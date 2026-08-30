@@ -13,9 +13,14 @@
  * Suggestions are ordered most-relevant FIRST (nearest the box above them);
  * the caller supplies `options` least-relevant-first and this reverses.
  * Selection-only: typing filters, it never creates a new name.
+ *
+ * Tapping ANYWHERE in the field (the row, the whitespace around the picked
+ * pills — anything but a pill itself) selects it for typing; collapse is by
+ * tapping outside (blur) or Escape. The right-side "Select" hint persists
+ * while the field has picks, so the affordance doesn't vanish on unfocus.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useKeyboardPrimer } from "@/lib/useKeyboardPrimer";
 
 /** See the scroll note in the header: expanding wants the row at the TOP of
@@ -133,26 +138,50 @@ export default function CandidatePicker({
     setQuery("");
     inputRef.current?.focus();
   };
+  // "Anywhere in the field selects it for typing": expand when closed,
+  // refocus the input when already open. Pill taps are excluded by callers.
+  const focusField = () => {
+    if (open) inputRef.current?.focus();
+    else expand();
+  };
+  // While open, a tap on field chrome (the row, pill whitespace, a pill's ✕)
+  // must NOT steal focus from the input — the blur would collapse the field
+  // before the tap's click even lands. preventDefault on mousedown keeps the
+  // input focused; the click still fires.
+  const keepInputFocus = (e: ReactMouseEvent) => {
+    if (open) e.preventDefault();
+  };
 
   return (
     <div ref={rowRef} className="py-1">
       <button
         type="button"
-        onClick={open ? collapse : expand}
+        onClick={focusField}
+        onMouseDown={keepInputFocus}
         className="flex h-12 w-full items-center justify-between gap-3 text-left"
       >
         <span className="text-base">{label}</span>
         <span className="truncate text-base text-gray-500 dark:text-gray-500">
-          {open ? "Select" : selected.length > 0 ? "" : emptyValue}
+          {open || selected.length > 0 ? "Select" : emptyValue}
         </span>
       </button>
 
       {selected.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
+        <div
+          className="mb-2 flex cursor-pointer flex-wrap gap-2"
+          onMouseDown={keepInputFocus}
+          onClick={(e) => {
+            // Whitespace between/around the bubbles counts as the field;
+            // the bubbles themselves (and their ✕) don't.
+            if ((e.target as Element).closest("[data-pill]")) return;
+            focusField();
+          }}
+        >
           {selected.map((c) => (
             <span
               key={candidateKey(c)}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-500 bg-blue-100 py-1.5 pl-3 pr-1.5 text-sm text-blue-700 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-300"
+              data-pill
+              className="inline-flex max-w-full cursor-default items-center gap-1.5 rounded-full border border-blue-500 bg-blue-100 py-1.5 pl-3 pr-1.5 text-sm text-blue-700 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-300"
             >
               {c.kind === "groups" && <GroupGlyph />}
               <span className="truncate">{c.name}</span>
