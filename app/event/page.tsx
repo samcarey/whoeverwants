@@ -237,14 +237,9 @@ function EventPageInner() {
               <div className="flex flex-col items-center gap-1 text-center">
                 <div className="text-5xl leading-none">{ev.emoji ?? "📅"}</div>
                 <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{ev.activity}</h1>
-                <p className="text-gray-500 dark:text-gray-400">
-                  <span className="text-blue-600 dark:text-blue-400">{getRelativeDayLabel(ev.day)}</span>{" "}
-                  · {fmtDate(ev.day)}
-                  {ev.time && <> · {fmtClock(ev.time)}</>}
-                </p>
-                {statusPill}
-                {/* The slot activity this proposal grew from; conditions
-                    (With / At Least / Without…) are edited there. */}
+                {/* Right under the title: the slot activity this proposal
+                    grew from; conditions (With / At Least / Without…) are
+                    edited there. */}
                 {interest && (
                   <button
                     type="button"
@@ -257,6 +252,12 @@ function EventPageInner() {
                     </svg>
                   </button>
                 )}
+                <p className="text-gray-500 dark:text-gray-400">
+                  <span className="text-blue-600 dark:text-blue-400">{getRelativeDayLabel(ev.day)}</span>{" "}
+                  · {fmtDate(ev.day)}
+                  {ev.time && <> · {fmtClock(ev.time)}</>}
+                </p>
+                {statusPill}
               </div>
 
               {/* The action lives right under the title block (Back Out when
