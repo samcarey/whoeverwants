@@ -74,7 +74,7 @@ def _yes_no_draft(prompt="Should we grab dinner after?"):
 
 
 def _event_poll_rows(day, key):
-    with psycopg.connect(TEST_DB_URL) as conn:
+    with psycopg.connect(TEST_DB_URL, row_factory=psycopg.rows.dict_row) as conn:
         rows = conn.execute(
             "SELECT poll_id, title FROM slot_event_polls"
             " WHERE day = %s::date AND LOWER(activity) = %s",

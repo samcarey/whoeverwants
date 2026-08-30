@@ -1609,7 +1609,7 @@ export default function NewSlotSheet() {
                         Options
                       </label>
                       <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3 space-y-2">
-                        {draft.poll.options.map((o, i) => (
+                        {draft.poll.options.map((o, i, arr) => (
                           <div key={i} className="flex items-center gap-2">
                             <input
                               value={o}
@@ -1619,7 +1619,9 @@ export default function NewSlotSheet() {
                               aria-label={`Poll option ${i + 1}`}
                               className="flex-1 min-w-0 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
                             />
-                            {draft.poll.options.length > 2 && (
+                            {/* arr, not draft.poll.options: TS can't narrow
+                                the null through the map callback. */}
+                            {arr.length > 2 && (
                               <button
                                 type="button"
                                 onClick={() => removePollOption(i)}
