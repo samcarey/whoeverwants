@@ -49,6 +49,17 @@ MAX_HOURS = 24
 MAX_WITH_NAMES = 20
 MAX_WITH_NAME_CHARS = 50
 MAX_WHO_WITH_ENTRIES = 10
+# Attached poll-draft caps (silent truncation / silent drop of an unusable
+# draft, the join-request-message convention).
+MAX_POLL_TITLE_CHARS = 120
+MAX_POLL_CONTEXT_CHARS = 200
+MAX_POLL_OPTION_CHARS = 200
+MAX_POLL_OPTIONS = 30
+# The kinds an attached poll can be in v1: a yes/no question or a
+# fixed-options ranked choice. Both are prephase-free, so the started poll
+# needs no suggestion/availability deadline (whose wall-clock-vs-timezone
+# math slots deliberately avoid).
+POLL_DRAFT_TYPES = {"yes_no", "ranked_choice"}
 # What an unnamed group (no title override, no named participants yet) reads as
 # in the who-with picker. Mirrors the FE's `EMPTY_GROUP_TITLE`.
 UNNAMED_GROUP_LABEL = "New Group"
@@ -241,6 +252,64 @@ def _clean_time_prefs(value) -> dict | None:
     return {"liked": liked, "disliked": disliked}
 
 
+def _clean_poll_draft(value) -> dict | None:
+    """Sanitize an activity's attached poll draft down to the server-replayable
+    ``{"title", "question"}`` shape (see migration 156). An unusable draft —
+    wrong type, a ranked choice with fewer than 2 distinct options, a yes/no
+    with no prompt — is silently DROPPED (None), mirroring how `_clean_refs`
+    handles junk rather than 400ing the whole slot save. The question dict is
+    rebuilt from a whitelist so a raw-API caller can't smuggle arbitrary
+    fields into the eventual `CreateQuestionRequest` replay."""
+    if not isinstance(value, dict):
+        return None
+    q = value.get("question")
+    if not isinstance(q, dict):
+        return None
+    qtype = q.get("question_type")
+    if qtype not in POLL_DRAFT_TYPES:
+        return None
+    options: list[str] = []
+    seen: set[str] = set()
+    for o in q.get("options") or []:
+        if not isinstance(o, str):
+            continue
+        t = truncate_text(o, MAX_POLL_OPTION_CHARS)
+        if not t or t.lower() in seen:
+            continue
+        seen.add(t.lower())
+        options.append(t)
+        if len(options) >= MAX_POLL_OPTIONS:
+            break
+    context = truncate_text(q.get("context") if isinstance(q.get("context"), str) else None, MAX_POLL_CONTEXT_CHARS)
+    title = truncate_text(value.get("title") if isinstance(value.get("title"), str) else None, MAX_POLL_TITLE_CHARS)
+    if qtype == "yes_no":
+        # The prompt rides as context (the draftToQuestionParams convention);
+        # a promptless yes/no with no title has nothing to ask.
+        if not context and not title:
+            return None
+        options = []
+    elif len(options) < 2:
+        return None
+    try:
+        icon = validate_category_icon(q.get("category_icon"))
+    except Exception:  # noqa: BLE001 — a bad emoji just drops, never 400s the slot
+        icon = None
+    category = truncate_text(q.get("category") if isinstance(q.get("category"), str) else None, 60)
+    winner = q.get("winner_method") if q.get("winner_method") in {"favorite", "consensus"} else None
+    return {
+        "title": title,
+        "question": {
+            "question_type": qtype,
+            "category": category,
+            "category_icon": icon,
+            "options": options or None,
+            "context": context,
+            "winner_method": winner,
+            "is_auto_title": bool(q.get("is_auto_title", qtype != "yes_no")),
+        },
+    }
+
+
 def _member_group_names(conn, user_id: str) -> dict[str, str]:
     """{group_id: display name} for every group the account is a member of.
 
@@ -363,13 +432,14 @@ def _insert_slot_activities(conn, slot_id: str, activities, *, user_id: str) -> 
         max_hours = _clean_hours(raw.get("max_hours"))
         if min_hours is not None and max_hours is not None and max_hours < min_hours:
             max_hours = min_hours
+        poll_draft = _clean_poll_draft(raw.get("poll_draft"))
         conn.execute(
             """
             INSERT INTO slot_activities
                 (slot_id, activity, emoji, min_people, max_people, who_with, time_prefs,
-                 min_hours, max_hours)
+                 min_hours, max_hours, poll_draft)
             VALUES (%(s)s::uuid, %(a)s, %(e)s, %(mn)s, %(mx)s, %(ww)s::jsonb, %(tp)s::jsonb,
-                    %(mnh)s, %(mxh)s)
+                    %(mnh)s, %(mxh)s, %(pd)s::jsonb)
             """,
             {
                 "s": slot_id,
@@ -381,6 +451,7 @@ def _insert_slot_activities(conn, slot_id: str, activities, *, user_id: str) -> 
                 "tp": json.dumps(time_prefs) if time_prefs else None,
                 "mnh": min_hours,
                 "mxh": max_hours,
+                "pd": json.dumps(poll_draft) if poll_draft else None,
             },
         )
 
@@ -471,7 +542,7 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
         arows = conn.execute(
             """
             SELECT slot_id, activity, emoji, min_people, max_people, who_with, time_prefs,
-                   min_hours, max_hours
+                   min_hours, max_hours, poll_draft
               FROM slot_activities
              WHERE slot_id = ANY(%(ids)s::uuid[])
              ORDER BY created_at
@@ -490,6 +561,7 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
                     # NUMERIC comes back as Decimal — the JSON layer wants float.
                     "min_hours": float(a["min_hours"]) if a["min_hours"] is not None else None,
                     "max_hours": float(a["max_hours"]) if a["max_hours"] is not None else None,
+                    "poll_draft": a["poll_draft"] or None,
                 }
             )
     return [

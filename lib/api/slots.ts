@@ -52,6 +52,31 @@ export interface TimePrefs {
   disliked: string[];
 }
 
+/** The server-replayable question spec inside an attached poll draft — the
+ *  whitelisted subset of CreateQuestionParams the server replays into its
+ *  create helpers when the poll starts. v1 kinds: a yes/no question (the
+ *  prompt rides as `context`, the draftToQuestionParams convention) or a
+ *  fixed-options ranked choice (≥2 options). */
+export interface ActivityPollQuestion {
+  question_type: "yes_no" | "ranked_choice";
+  category?: string | null;
+  category_icon?: string | null;
+  options?: string[] | null;
+  context?: string | null;
+  winner_method?: "favorite" | "consensus" | null;
+  is_auto_title?: boolean;
+}
+
+/** A poll attached to an activity in the editor's Poll card. When the events
+ *  engine finds a viable gathering for the (day, activity) key, the server
+ *  creates a REAL poll from this draft (one per key) and surfaces it on the
+ *  event card + page. `title` is the derived poll title (kept in lockstep
+ *  with the question by the FE builder — see lib/activityPollDraft.ts). */
+export interface ActivityPollDraft {
+  title: string | null;
+  question: ActivityPollQuestion;
+}
+
 export interface SlotActivity extends ActivitySuggestion {
   min_people?: number | null;
   max_people?: number | null;
@@ -66,6 +91,8 @@ export interface SlotActivity extends ActivitySuggestion {
    *  unconstrained (legacy rows). */
   min_hours?: number | null;
   max_hours?: number | null;
+  /** Optional attached poll (see ActivityPollDraft); null = none. */
+  poll_draft?: ActivityPollDraft | null;
 }
 
 export interface ActivitySuggestions {
@@ -194,6 +221,18 @@ export interface SlotEvent {
    *  and isn't confirmable yet — shown so a declared activity is never a
    *  silent dead end. */
   needed: number;
+  /** The key's STARTED poll (created from an attached activity draft the
+   *  moment a viable gathering existed) — one per (day, activity), riding on
+   *  every card of the key. Drives the card's third-line timer and the event
+   *  page's Poll section; URL = /g/{group_short_id}/p/{poll_short_id}. */
+  poll?: SlotEventPoll | null;
+}
+
+export interface SlotEventPoll {
+  poll_short_id: string | null;
+  group_short_id: string | null;
+  title: string | null;
+  is_closed: boolean;
 }
 
 /** Last-resolved events list — the same first-commit-paint role cachedSlots

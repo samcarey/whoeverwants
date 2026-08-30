@@ -529,6 +529,35 @@ def _load_confirmations(conn, days: list[str]) -> dict[tuple[str, str], dict[str
     return out
 
 
+def _load_event_polls(conn, days: list[str]) -> dict[tuple[str, str], dict]:
+    """(day, activity_key) → the STARTED poll's display info, from the
+    slot_event_polls link table (one per key). What the event card's timer
+    line and the event page's Poll section render."""
+    if not days:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT sep.day::text AS day, LOWER(sep.activity) AS key, sep.title,
+               p.short_id AS poll_short_id, p.is_closed,
+               g.short_id AS group_short_id
+          FROM slot_event_polls sep
+          JOIN polls p ON p.id = sep.poll_id
+          LEFT JOIN groups g ON g.id = p.group_id
+         WHERE sep.day = ANY(%(days)s::date[])
+        """,
+        {"days": days},
+    ).fetchall()
+    return {
+        (r["day"], r["key"]): {
+            "poll_short_id": r["poll_short_id"],
+            "group_short_id": r["group_short_id"],
+            "title": r["title"],
+            "is_closed": bool(r["is_closed"]),
+        }
+        for r in rows
+    }
+
+
 def _minutes_to_hhmm(m: int) -> str:
     m %= 1440
     return f"{m // 60:02d}:{m % 60:02d}"
@@ -624,6 +653,7 @@ def _cards_for_key(
     parties: dict[str, set[str]],
     viewer_id: str,
     members: dict[str, set[str]],
+    poll_info: dict | None = None,
 ) -> list[dict]:
     """Every card the viewer sees for one (day, activity): each LIVE party
     (≥1 valid confirmation), plus the fresh empty party exactly when the
@@ -666,6 +696,11 @@ def _cards_for_key(
             near = _near_miss_payload(day, cands, viewer_id, members, unattached)
             if near is not None:
                 cards.append(near)
+    # The key's started poll (if any) rides on EVERY card of the key — it
+    # belongs to the gathering, not to any one party.
+    if poll_info is not None:
+        for card in cards:
+            card["poll"] = poll_info
     # The viewer's own party first, then joinable ones (fullest first), then
     # full ones, with the fresh card at the end.
     cards.sort(
@@ -707,10 +742,14 @@ def list_events(conn, *, user_id: str | None) -> list[dict]:
     gids, uids = _all_ref_group_ids(events)
     members = _load_memberships(conn, gids, uids)
     confirmations = _load_confirmations(conn, days)
+    polls = _load_event_polls(conn, days)
     out: list[dict] = []
     for (day, key), cands in events.items():
         out.extend(
-            _cards_for_key(day, cands, confirmations.get((day, key), {}), user_id, members)
+            _cards_for_key(
+                day, cands, confirmations.get((day, key), {}), user_id, members,
+                poll_info=polls.get((day, key)),
+            )
         )
     # Chronological across keys BY THE DISPLAYED "@ time" (falling back to the
     # anchor window) so the list order matches what the cards say;
@@ -848,7 +887,8 @@ def set_confirmation(
     )
 
     fresh_parties = _load_confirmations(conn, [day]).get((day, key), {})
-    cards = _cards_for_key(day, cands, fresh_parties, user_id, members)
+    poll_info = _load_event_polls(conn, [day]).get((day, key))
+    cards = _cards_for_key(day, cands, fresh_parties, user_id, members, poll_info=poll_info)
     for card in cards:
         if confirmed and card["id"] == target:
             return card
@@ -869,4 +909,156 @@ def set_confirmation(
         "can_confirm": False,
         "met": False,
         "needed": 0,
+        "poll": poll_info,
     }
+
+
+# ----------------------------------------------------------------------------
+# Attached polls: start one when the gathering becomes possible
+# ----------------------------------------------------------------------------
+
+def _load_poll_drafts(conn, days: list[str]) -> dict[tuple[str, str], list[dict]]:
+    """(day, activity_key) → the attached poll drafts among slots touching
+    those days, earliest-attached first (the first attacher's draft wins when
+    a key starts its poll)."""
+    if not days:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT s.user_id, s.day_time_windows, sa.activity, sa.poll_draft, sa.created_at
+          FROM slots s
+          JOIN slot_activities sa ON sa.slot_id = s.id
+         WHERE sa.poll_draft IS NOT NULL
+           AND EXISTS (
+                 SELECT 1 FROM jsonb_array_elements(s.day_time_windows) e
+                  WHERE e->>'day' = ANY(%(days)s)
+               )
+        """,
+        {"days": days},
+    ).fetchall()
+    out: dict[tuple[str, str], list[dict]] = {}
+    for r in rows:
+        act = normalize_activity(r["activity"])
+        if not act or not isinstance(r["poll_draft"], dict):
+            continue
+        key = act.lower()
+        slot_days = set(_windows_by_day(r["day_time_windows"]).keys())
+        for day in days:
+            if day not in slot_days:
+                continue
+            out.setdefault((day, key), []).append(
+                {
+                    "user_id": str(r["user_id"]),
+                    "draft": r["poll_draft"],
+                    "created_at": r["created_at"],
+                }
+            )
+    for lst in out.values():
+        lst.sort(key=lambda d: (d["created_at"] is None, d["created_at"]))
+    return out
+
+
+def _create_event_poll(conn, day: str, activity_display: str, cands: dict[str, _Candidate], draft_row: dict) -> str | None:
+    """Create a REAL poll from an activity's attached draft and link it to the
+    (day, activity) key. Reuses the create endpoint's insert helpers (lazy
+    import, the recurrence-materializer pattern): the poll lands in a fresh
+    PUBLIC group (no signed-in group creator), owned by the draft's attacher,
+    with no voting deadline (the event card's timer counts to the EVENT start
+    instead — slot times are wall-clock with no timezone, so a server-side
+    deadline would be a lie somewhere). Every current candidate of the key is
+    added as a group member so the poll is on their home list and votable."""
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    from models import CreatePollRequest, CreateQuestionRequest  # noqa: PLC0415
+    from routers.polls import _insert_poll, _insert_question  # noqa: PLC0415
+    from services.contacts import add_member_for_user  # noqa: PLC0415
+
+    d = draft_row["draft"]
+    q = d.get("question") or {}
+    qtype = q.get("question_type")
+    if qtype not in ("yes_no", "ranked_choice"):
+        return None
+    owner_id = draft_row["user_id"]
+    owner = cands.get(owner_id)
+    creator_name = (owner.name if owner else None) or "Someone"
+    title = (d.get("title") or "").strip() or (q.get("context") or "").strip() or "Poll"
+    sub = CreateQuestionRequest(
+        question_type=qtype,
+        category=q.get("category"),
+        category_icon=q.get("category_icon"),
+        options=q.get("options"),
+        context=q.get("context"),
+        winner_method=q.get("winner_method") or ("consensus" if qtype == "ranked_choice" else "favorite"),
+        is_auto_title=bool(q.get("is_auto_title", qtype != "yes_no")),
+    )
+    now = datetime.now(timezone.utc)
+    req = CreatePollRequest(
+        creator_name=creator_name,
+        response_deadline=None,
+        group_id=None,
+        questions=[sub],
+    )
+    poll_row = _insert_poll(
+        conn, req, now,
+        creator_user_id=owner_id,
+        group_creator_user_id=None,
+    )
+    _insert_question(conn, poll_row, req, sub, 0, title, now)
+    inserted = conn.execute(
+        """
+        INSERT INTO slot_event_polls (day, activity, poll_id, title)
+        VALUES (%(d)s::date, %(a)s, %(p)s::uuid, %(t)s)
+        ON CONFLICT (day, LOWER(activity)) DO NOTHING
+        RETURNING poll_id
+        """,
+        {"d": day, "a": activity_display, "p": str(poll_row["id"]), "t": title},
+    ).fetchone()
+    if not inserted:
+        # A concurrent save won the key — abandon this copy (the poll row is
+        # orphaned in its own group; harmless, and the txn may roll back).
+        return None
+    for uid in cands:
+        add_member_for_user(conn, str(poll_row["group_id"]), uid)
+    return str(poll_row["id"])
+
+
+def start_due_event_polls(conn, *, user_id: str | None, days: list[str]) -> list[str]:
+    """After a slot save touching `days`: for every (day, activity) key the
+    saver is a candidate of, if some candidate attached a poll draft, no poll
+    has started for the key yet, and a viable gathering exists for the
+    draft's owner (the "suggested for a time slot" moment — the same
+    subset-viability rule that surfaces the fresh card), create the poll and
+    record the link. One poll per key, ever. Returns the created poll ids.
+
+    Deliberately called OUTSIDE the slot-save transaction (own connection,
+    errors swallowed by the caller) so a poll-creation hiccup can't fail the
+    save — the next save of any participant retries."""
+    days = sorted({d for d in days if d})
+    if not user_id or not days:
+        return []
+    events = _gather_days(conn, days)
+    keys = [(day, key) for (day, key), cands in events.items() if user_id in cands]
+    if not keys:
+        return []
+    existing = _load_event_polls(conn, days)
+    pending = [k for k in keys if k not in existing]
+    if not pending:
+        return []
+    drafts = _load_poll_drafts(conn, days)
+    gids, uids = _all_ref_group_ids(events)
+    members = _load_memberships(conn, gids, uids)
+    created: list[str] = []
+    for day, key in pending:
+        cands = events[(day, key)]
+        for row in drafts.get((day, key), []):
+            owner = cands.get(row["user_id"])
+            if owner is None:
+                continue
+            pool = [c for c in cands.values() if c.user_id != owner.user_id]
+            if _preferred_viable_start(owner, pool, members) is None:
+                continue
+            pid = _create_event_poll(conn, day, owner.display or key, cands, row)
+            if pid:
+                created.append(pid)
+            break
+    return created

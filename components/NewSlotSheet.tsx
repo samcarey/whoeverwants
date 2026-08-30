@@ -41,7 +41,7 @@
  * Self-manages its open + editing state.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
 import DaysSelector from "@/components/DaysSelector";
 import TimeSlotBubbles, { type SlotState } from "@/components/TimeSlotBubbles";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
@@ -74,6 +74,17 @@ import {
   type WhoWithRef,
 } from "@/lib/api/slots";
 import { apiAddActivityBlacklist } from "@/lib/api/users";
+import {
+  pollEditCategoryLabel,
+  pollEditFromWire,
+  pollEditIcon,
+  pollEditTitleSegments,
+  pollEditToWire,
+  pollEditValid,
+  pollSuggestionRows,
+  type ActivityPollEdit,
+  type TitleSegment,
+} from "@/lib/activityPollDraft";
 import {
   SLOT_SHEET_OPEN_EVENT,
   notifySlotsChanged,
@@ -122,6 +133,8 @@ interface ActivityDraft {
   disliked: string[];
   minHours: number;
   maxHours: number;
+  /** The attached poll (the Poll card / its submodal); null = none. */
+  poll: ActivityPollEdit | null;
 }
 
 /** The weakest bounds on offer — what a fresh activity (or a legacy one with
@@ -138,7 +151,36 @@ const EMPTY_DRAFT: ActivityDraft = {
   disliked: [],
   minHours: DEFAULT_MIN_HOURS,
   maxHours: DEFAULT_MAX_HOURS,
+  poll: null,
 };
+
+// ---- Attached-poll submodal (slides in over the sheet, swipe-right to go
+// back — the create-poll question-editor pattern, ported; edits apply LIVE to
+// the draft, so back never discards).
+const POLL_SUB_SLIDE_MS = 300;
+const POLL_SUB_TRANSITION = `transform ${POLL_SUB_SLIDE_MS}ms ease`;
+const POLL_SWIPE_RECOGNIZE_PX = 10;
+const POLL_SWIPE_COMMIT_RATIO = 0.3;
+const POLL_SWIPE_COMMIT_VELOCITY = 0.5; // px/ms
+
+/** The annotated poll-title spans (the create-poll suggestion palette,
+ *  colors only — no labels/underlines at this size). */
+const POLL_SEG_CLASS: Record<string, string> = {
+  category: "text-green-600/90 dark:text-green-400/90",
+  context: "text-purple-600/90 dark:text-purple-400/90",
+  option: "text-blue-600/90 dark:text-blue-400/90",
+};
+
+function renderTitleSegments(segments: TitleSegment[]) {
+  return segments.map((s, i) => (
+    <span
+      key={i}
+      className={s.muted ? "text-gray-400 dark:text-gray-500" : POLL_SEG_CLASS[s.kind] ?? ""}
+    >
+      {s.text}
+    </span>
+  ));
+}
 
 /** Seed the who-with condition from a loaded activity: its FIRST who_with
  *  entry (the editor is single-condition now — a legacy activity with several
@@ -331,6 +373,25 @@ export default function NewSlotSheet() {
   // Activity name awaiting delete confirmation (null = no confirm open). Only
   // "you've picked before" suggestions can be deleted (→ blacklisted).
   const [pendingBlacklist, setPendingBlacklist] = useState<string | null>(null);
+  // The Poll card: its search text + dropdown, and the slide-in submodal
+  // editing the attached poll.
+  const [pollQuery, setPollQuery] = useState("");
+  const [pollSuggestOpen, setPollSuggestOpen] = useState(false);
+  const [pollSubOpen, setPollSubOpen] = useState(false);
+  const [pollSubSlideIn, setPollSubSlideIn] = useState(false);
+  const pollSubOpenRef = useRef(false);
+  useEffect(() => {
+    pollSubOpenRef.current = pollSubOpen;
+  }, [pollSubOpen]);
+  const pollPanelRef = useRef<HTMLDivElement | null>(null);
+  const pollSwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    startTime: number;
+    dx: number;
+    swiping: boolean;
+    ignored: boolean;
+  } | null>(null);
   const isEditing = editingSlot !== null;
   const showSchedule = mode !== "activity";
   const showActivity = mode === "activity";
@@ -416,9 +477,14 @@ export default function NewSlotSheet() {
               disliked: existing.time_prefs?.disliked ?? [],
               minHours: existing.min_hours ?? DEFAULT_MIN_HOURS,
               maxHours: existing.max_hours ?? DEFAULT_MAX_HOURS,
+              poll: existing.poll_draft ? pollEditFromWire(existing.poll_draft) : null,
             }
           : EMPTY_DRAFT,
       );
+      setPollQuery("");
+      setPollSuggestOpen(false);
+      setPollSubOpen(false);
+      setPollSubSlideIn(false);
       setEmojiOpen(false);
       setSuggestOpen(detail?.mode === "activity" && (detail?.activityIndex ?? null) === null);
       setCalendarMonth(monthForSlot(slot));
@@ -546,6 +612,124 @@ export default function NewSlotSheet() {
   const setEmoji = useCallback((emoji: string) => {
     setDraft((prev) => ({ ...prev, emoji }));
   }, []);
+
+  // ---- Attached poll: submodal open/close + live edits -------------------
+
+  // Open the poll submodal on an edit state (a tapped suggestion row, or the
+  // already-attached poll). DOUBLE rAF so the translateX(100%) enter frame
+  // paints before the transition to 0 (the slide-overlay/create-poll trap).
+  const openPollSub = useCallback((edit: ActivityPollEdit) => {
+    // A fresh options-poll opens with two empty rows ready to type into
+    // (two is the minimum a poll needs).
+    const seeded =
+      edit.category !== "yes_no" && edit.options.length === 0
+        ? { ...edit, options: ["", ""] }
+        : edit;
+    setDraft((prev) => ({ ...prev, poll: seeded }));
+    setPollQuery("");
+    setPollSuggestOpen(false);
+    setPollSubOpen(true);
+    setPollSubSlideIn(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => setPollSubSlideIn(true)));
+  }, []);
+  // Slide out, THEN unmount — the panel stays visible through the exit.
+  const closePollSub = useCallback(() => {
+    setPollSubSlideIn(false);
+    window.setTimeout(() => setPollSubOpen(false), POLL_SUB_SLIDE_MS);
+  }, []);
+  const closePollSubRef = useRef(closePollSub);
+  useEffect(() => {
+    closePollSubRef.current = closePollSub;
+  });
+
+  const patchPoll = useCallback((patch: Partial<ActivityPollEdit>) => {
+    setDraft((prev) => (prev.poll ? { ...prev, poll: { ...prev.poll, ...patch } } : prev));
+  }, []);
+  const setPollOption = useCallback((i: number, v: string) => {
+    setDraft((prev) => {
+      if (!prev.poll) return prev;
+      const options = prev.poll.options.map((o, k) => (k === i ? v : o));
+      return { ...prev, poll: { ...prev.poll, options } };
+    });
+  }, []);
+  const removePollOption = useCallback((i: number) => {
+    setDraft((prev) => {
+      if (!prev.poll) return prev;
+      const options = prev.poll.options.filter((_, k) => k !== i);
+      return { ...prev, poll: { ...prev.poll, options } };
+    });
+  }, []);
+  const addPollOption = useCallback(() => {
+    setDraft((prev) =>
+      prev.poll ? { ...prev, poll: { ...prev.poll, options: [...prev.poll.options, ""] } } : prev,
+    );
+  }, []);
+  const detachPoll = useCallback(() => {
+    setDraft((prev) => ({ ...prev, poll: null }));
+  }, []);
+
+  // Rightward swipe on the submodal = back (same thresholds/feel as the
+  // create-poll question editor's inline gesture). Per-frame transform is
+  // imperative (no re-render); the resting transform is React-driven off
+  // pollSubSlideIn, so commit restores the transition inline BEFORE the
+  // close re-render (React won't rewrite an unchanged transition prop).
+  const handlePollSubTouchStart = useCallback((e: ReactTouchEvent) => {
+    if (e.touches.length !== 1) {
+      pollSwipeRef.current = null;
+      return;
+    }
+    const t = e.touches[0];
+    pollSwipeRef.current = {
+      startX: t.clientX,
+      startY: t.clientY,
+      startTime: Date.now(),
+      dx: 0,
+      swiping: false,
+      ignored: false,
+    };
+  }, []);
+  const handlePollSubTouchMove = useCallback((e: ReactTouchEvent) => {
+    const s = pollSwipeRef.current;
+    const el = pollPanelRef.current;
+    if (!s || s.ignored || !el) return;
+    const t = e.touches[0];
+    const dx = t.clientX - s.startX;
+    const dy = t.clientY - s.startY;
+    if (!s.swiping) {
+      if (Math.abs(dx) < POLL_SWIPE_RECOGNIZE_PX && Math.abs(dy) < POLL_SWIPE_RECOGNIZE_PX) return;
+      // Vertical-dominant or leftward = not a back gesture; leave the touch
+      // to native scroll (never preventDefault — the iOS scroll-kill trap).
+      if (Math.abs(dy) >= Math.abs(dx) || dx <= 0) {
+        s.ignored = true;
+        return;
+      }
+      s.swiping = true;
+    }
+    s.dx = Math.max(0, dx);
+    el.style.transition = "none";
+    el.style.transform = `translateX(${s.dx}px)`;
+  }, []);
+  const handlePollSubTouchEnd = useCallback(() => {
+    const s = pollSwipeRef.current;
+    const el = pollPanelRef.current;
+    pollSwipeRef.current = null;
+    if (!s || !s.swiping || !el) return;
+    const width = el.clientWidth || 1;
+    const velocity = s.dx / Math.max(1, Date.now() - s.startTime);
+    el.style.transition = POLL_SUB_TRANSITION;
+    if (s.dx >= width * POLL_SWIPE_COMMIT_RATIO || velocity >= POLL_SWIPE_COMMIT_VELOCITY) {
+      closePollSubRef.current();
+    } else {
+      el.style.transform = "translateX(0px)";
+    }
+  }, []);
+
+  // The Poll card's suggestion rows: the create-poll planner over the typed
+  // query, filtered to attachable kinds (see lib/activityPollDraft).
+  const pollRows = useMemo(
+    () => (draft.poll ? [] : pollSuggestionRows(pollQuery)),
+    [draft.poll, pollQuery],
+  );
   // Commit ONE activity (append, or replace at activityIndex) onto the slot's
   // list and close. Takes the draft EXPLICITLY so a suggestion tap can save
   // its pick without waiting for the setDraft round-trip (handleSave's state
@@ -570,6 +754,9 @@ export default function NewSlotSheet() {
             : null,
         min_hours: d.minHours,
         max_hours: d.maxHours,
+        // An incomplete poll (e.g. a category picked but <2 options) converts
+        // to null — the card warns about this before it's lost.
+        poll_draft: d.poll ? pollEditToWire(d.poll) : null,
       };
       let base: SlotActivity[];
       if (activityIndex !== null) {
@@ -791,12 +978,17 @@ export default function NewSlotSheet() {
       if (e.key !== "Escape") return;
       // A stacked modal (emoji picker or delete confirm) consumes Escape.
       if (emojiOpen || pendingBlacklist !== null) return;
+      // The poll submodal closes first — Escape peels one layer at a time.
+      if (pollSubOpenRef.current) {
+        closePollSub();
+        return;
+      }
       cancelledRef.current = true;
       close();
     };
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, [isOpen, close, emojiOpen, pendingBlacklist]);
+  }, [isOpen, close, closePollSub, emojiOpen, pendingBlacklist]);
 
   // Collapsing snaps the month back to today's (the compact grid is
   // today-anchored, so a navigated-away month would disagree with it) —
@@ -817,6 +1009,9 @@ export default function NewSlotSheet() {
   const { sheetRef, backdropRef, touchHandlers } = useSheetDismissGesture({
     scrollerRef: sheetScrollerNodeRef,
     onDismiss: close,
+    // The poll submodal owns its own (horizontal) back gesture; a vertical
+    // drag inside it shouldn't drag the whole sheet down.
+    canStart: () => !pollSubOpenRef.current,
   });
 
   if (!isOpen) return null;
@@ -1169,6 +1364,97 @@ export default function NewSlotSheet() {
             </section>
             )}
 
+            {/* An optional POLL riding on the gathering: type what to decide
+                and the create-poll suggestion planner interprets it (yes/no,
+                options list, category…); picking a row slides into the poll
+                submodal. Once a viable gathering exists for this (day,
+                activity), the server starts the poll for real and it shows on
+                the event card + page. */}
+            {!isNewActivity && (
+            <div>
+              <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+                Poll
+              </label>
+              <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                {draft.poll ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => draft.poll && openPollSub(draft.poll)}
+                        className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                        aria-label="Edit the attached poll"
+                      >
+                        <span className="shrink-0 text-xl leading-none">{pollEditIcon(draft.poll)}</span>
+                        <span className="min-w-0 flex-1 truncate text-base">
+                          {renderTitleSegments(pollEditTitleSegments(draft.poll))}
+                        </span>
+                        <svg className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={detachPoll}
+                        aria-label="Remove the attached poll"
+                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    {!pollEditValid(draft.poll) && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                        {draft.poll.category === "yes_no"
+                          ? "Type the question or the poll won't be saved."
+                          : "Add at least 2 options or the poll won't be saved."}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <input
+                      value={pollQuery}
+                      onChange={(e) => setPollQuery(e.target.value)}
+                      onFocus={() => setPollSuggestOpen(true)}
+                      onBlur={() => setPollSuggestOpen(false)}
+                      onClick={() => setPollSuggestOpen(true)}
+                      placeholder="Add a poll — what should the group decide?"
+                      aria-label="Attach a poll"
+                      className="w-full bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                    />
+                    {pollSuggestOpen && pollRows.length > 0 && (
+                      <div className="mt-3 max-h-64 overflow-y-auto overscroll-contain">
+                        <ul>
+                          {pollRows.map((r) => (
+                            <li
+                              key={r.key}
+                              // Commit before the input blurs (blur collapses
+                              // the dropdown).
+                              onMouseDown={(e) => e.preventDefault()}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => openPollSub(r.edit)}
+                                className="flex w-full items-center gap-3 h-11 text-left"
+                              >
+                                <span className="shrink-0 text-xl leading-none">{r.icon}</span>
+                                <span className="min-w-0 flex-1 truncate text-base">
+                                  {renderTitleSegments(r.segments)}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            </div>
+            )}
+
             {/* How long the activity should run. The pair is enforced ordered
                 on every change; the bounds feed the events engine (a set is
                 only viable when everyone's bounds are mutually satisfiable,
@@ -1240,6 +1526,148 @@ export default function NewSlotSheet() {
                 keyboard / off-screen, so it never reads as blank space. */}
             {pickersOpen > 0 && <div aria-hidden className="h-[70vh] shrink-0" />}
           </div>
+
+          {/* The attached poll's editor — a sub-panel sliding in over the
+              sheet (the create-poll question-editor pattern): ← or a
+              rightward swipe goes back; edits apply live, so back never
+              discards. Inside the sheet's overflow-hidden box, so it clips
+              cleanly at the rounded corners. */}
+          {pollSubOpen && draft.poll && (
+            <div
+              ref={pollPanelRef}
+              onTouchStart={handlePollSubTouchStart}
+              onTouchMove={handlePollSubTouchMove}
+              onTouchEnd={handlePollSubTouchEnd}
+              onTouchCancel={handlePollSubTouchEnd}
+              className="absolute inset-0 z-20 flex flex-col bg-gray-100 dark:bg-gray-900 touch-pan-y"
+              style={{
+                transform: pollSubSlideIn ? "translateX(0px)" : "translateX(100%)",
+                transition: POLL_SUB_TRANSITION,
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Edit poll"
+            >
+              <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                <button
+                  type="button"
+                  onClick={closePollSub}
+                  aria-label="Back to the activity"
+                  className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <span className="text-lg font-semibold select-none">Poll</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-none px-3 pb-6 space-y-[14.4px]">
+                {/* Live title preview — what the started poll will be named
+                    (the create-poll blue mono title convention). */}
+                <div
+                  className="px-1 text-xl font-bold text-blue-600 dark:text-blue-400"
+                  style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
+                >
+                  {renderTitleSegments(pollEditTitleSegments(draft.poll))}
+                </div>
+
+                {draft.poll.category === "yes_no" ? (
+                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                    <label className="flex h-12 items-center justify-between gap-3">
+                      <span className="text-base shrink-0">Question</span>
+                      <input
+                        value={draft.poll.title}
+                        onChange={(e) => patchPoll({ title: e.target.value })}
+                        onBlur={(e) => patchPoll({ title: e.target.value.trim() })}
+                        placeholder="Should we…?"
+                        className="flex-1 min-w-0 bg-transparent text-base text-right text-gray-500 dark:text-gray-500 outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                      />
+                    </label>
+                  </section>
+                ) : (
+                  <>
+                    <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+                      <div className="flex h-12 items-center justify-between gap-3">
+                        <span className="text-base shrink-0">Category</span>
+                        <span className="min-w-0 truncate text-base text-gray-500 dark:text-gray-500">
+                          {pollEditCategoryLabel(draft.poll)}
+                        </span>
+                      </div>
+                      <label className="flex h-12 items-center justify-between gap-3">
+                        <span className="text-base shrink-0">For</span>
+                        <input
+                          value={draft.poll.forField}
+                          onChange={(e) => patchPoll({ forField: e.target.value })}
+                          onBlur={(e) => patchPoll({ forField: e.target.value.trim() })}
+                          placeholder="Context"
+                          className="flex-1 min-w-0 bg-transparent text-base text-right text-gray-500 dark:text-gray-500 outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                        />
+                      </label>
+                    </section>
+                    <div>
+                      <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+                        Options
+                      </label>
+                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3 space-y-2">
+                        {draft.poll.options.map((o, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <input
+                              value={o}
+                              onChange={(e) => setPollOption(i, e.target.value)}
+                              onBlur={(e) => setPollOption(i, e.target.value.trim())}
+                              placeholder={`Option ${i + 1}`}
+                              aria-label={`Poll option ${i + 1}`}
+                              className="flex-1 min-w-0 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                            />
+                            {draft.poll.options.length > 2 && (
+                              <button
+                                type="button"
+                                onClick={() => removePollOption(i)}
+                                aria-label={`Remove option ${i + 1}`}
+                                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={addPollOption}
+                          className="w-full h-10 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 text-sm text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500"
+                        >
+                          + Add option
+                        </button>
+                      </section>
+                    </div>
+                  </>
+                )}
+
+                {!pollEditValid(draft.poll) && (
+                  <p className="px-1 text-xs text-amber-600 dark:text-amber-400">
+                    {draft.poll.category === "yes_no"
+                      ? "Type the question so the poll can start."
+                      : "The poll needs at least 2 options before it can start."}
+                  </p>
+                )}
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      detachPoll();
+                      closePollSub();
+                    }}
+                    className="w-full h-11 rounded-2xl bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium flex items-center justify-center gap-2 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
+                  >
+                    Remove poll
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

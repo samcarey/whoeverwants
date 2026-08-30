@@ -29,6 +29,8 @@ import { SHOW_HOME_BACKDROP_EVENT, HIDE_HOME_BACKDROP_EVENT } from "@/lib/eventC
 import HeaderPortal from "@/components/HeaderPortal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import InitialBubble from "@/components/InitialBubble";
+import SimpleCountdown from "@/components/SimpleCountdown";
+import { eventStartIso } from "@/components/SlotCard";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import { GroupGlyph } from "@/components/CandidatePicker";
 import { partyCountLabel } from "@/components/PartyCountField";
@@ -292,6 +294,50 @@ function EventPageInner() {
                   )}
                 </div>
               </section>
+
+              {/* The gathering's poll (started from an attached activity
+                  draft the moment the event became possible). Voting happens
+                  on the poll's own page — this is the way in. */}
+              {ev.poll && ev.poll.group_short_id && ev.poll.poll_short_id && (
+                <section className="mt-6">
+                  <h2 className="mb-2 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
+                    Poll
+                  </h2>
+                  <div className="rounded-3xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
+                    <div className="flex items-center gap-2">
+                      <span aria-hidden="true" className="shrink-0 text-xl leading-none">📊</span>
+                      <span className="min-w-0 flex-1 truncate text-base text-gray-900 dark:text-gray-100">
+                        {ev.poll.title ?? "Poll"}
+                      </span>
+                      <span className="shrink-0 text-sm">
+                        {ev.poll.is_closed ? (
+                          <span className="text-gray-400 dark:text-gray-500">Closed</span>
+                        ) : (
+                          <SimpleCountdown
+                            deadline={eventStartIso(ev)}
+                            compact
+                            blankOnExpire
+                            colorClass="text-blue-600 dark:text-blue-400"
+                          />
+                        )}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigateWithTransition(
+                          router,
+                          `/g/${ev.poll!.group_short_id}/p/${ev.poll!.poll_short_id}`,
+                          "forward",
+                        )
+                      }
+                      className="mt-3 w-full rounded-2xl bg-blue-600 py-2.5 font-medium text-white transition active:bg-blue-700"
+                    >
+                      {ev.poll.is_closed ? "See Results" : "Vote"}
+                    </button>
+                  </div>
+                </section>
+              )}
 
               {/* The viewer's own who-with condition (read-only). */}
               {condition && (

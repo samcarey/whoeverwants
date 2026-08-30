@@ -21,11 +21,14 @@ from middleware import user_id_from_request as _user_id
 from services.auth import create_anonymous_user, resolve_actor_user_id
 from services.contacts import reconcile_contacts
 from services.groups import require_uuid
+import logging
+
 from services.slot_events import (
     EventFullError,
     NoSuchEventError,
     list_events,
     set_confirmation,
+    start_due_event_polls,
 )
 from services.slots import (
     create_slot,
@@ -38,6 +41,25 @@ from services.slots import (
 )
 
 router = APIRouter(prefix="/api/slots", tags=["slots"])
+log = logging.getLogger("slots")
+
+
+def _start_event_polls_after_save(user_id: str, day_time_windows) -> None:
+    """Best-effort pass after a slot save: start any (day, activity) polls the
+    save made possible (an attached draft + a now-viable gathering). Runs in
+    its OWN transaction after the save commits — a failed poll insert would
+    poison the save's transaction otherwise — and swallows errors (the next
+    save of any participant retries)."""
+    days = [d.get("day") for d in day_time_windows or [] if isinstance(d, dict)]
+    if not any(days):
+        return
+    try:
+        with get_db() as conn:
+            created = start_due_event_polls(conn, user_id=user_id, days=days)
+        if created:
+            log.info("started event polls %s", created)
+    except Exception:  # noqa: BLE001 — never fail the slot save over this
+        log.exception("start_due_event_polls failed")
 
 
 class WhoWithRef(BaseModel):
@@ -108,6 +130,12 @@ class ActivityInput(BaseModel):
     # unconstrained. Sanitized in services.slots (max bumped up to min).
     min_hours: float | None = None
     max_hours: float | None = None
+    # Optional attached POLL draft ({"title", "question"} — see migration 156):
+    # when the events engine finds a viable gathering for this (day, activity),
+    # the server creates a real poll from it and surfaces it on the event.
+    # Sanitized (whitelisted question fields, bounded strings; unusable drafts
+    # silently dropped) in services.slots._clean_poll_draft.
+    poll_draft: dict | None = None
 
 
 class CreateSlotRequest(BaseModel):
@@ -137,6 +165,7 @@ class SlotActivity(BaseModel):
     time_prefs: TimePrefs | None = None
     min_hours: float | None = None
     max_hours: float | None = None
+    poll_draft: dict | None = None
 
 
 class SlotResponse(BaseModel):
@@ -183,6 +212,7 @@ def create_slot_endpoint(req: CreateSlotRequest, request: Request):
             day_time_windows=req.day_time_windows,
             activities=[a.model_dump() for a in req.activities],
         )
+    _start_event_polls_after_save(user_id, req.day_time_windows)
     return CreateSlotResponse(id=slot_id)
 
 
@@ -237,6 +267,18 @@ def who_with_candidates_endpoint(request: Request):
     return WhoWithCandidatesResponse(candidates=candidates)
 
 
+class SlotEventPollInfo(BaseModel):
+    """The (day, activity) key's STARTED poll — created from an attached
+    activity draft the moment a viable gathering existed. One per key; rides
+    on every card of the key + the event page's Poll section. The FE builds
+    the poll URL as /g/{group_short_id}/p/{poll_short_id}."""
+
+    poll_short_id: str | None = None
+    group_short_id: str | None = None
+    title: str | None = None
+    is_closed: bool = False
+
+
 class SlotEventResponse(BaseModel):
     """One system-proposed PARTY as THIS viewer sees it — several may coexist
     per (day, activity). Derived on every read from the current slots +
@@ -264,6 +306,8 @@ class SlotEventResponse(BaseModel):
     # declared activity is never a silent dead end; such a card is not
     # confirmable yet.
     needed: int = 0
+    # The key's started poll (see SlotEventPollInfo); null when none.
+    poll: SlotEventPollInfo | None = None
 
 
 class SlotEventsResponse(BaseModel):
@@ -334,6 +378,7 @@ def update_slot_endpoint(slot_id: str, req: CreateSlotRequest, request: Request)
         )
         if not ok:
             raise HTTPException(status_code=404, detail="Slot not found")
+    _start_event_polls_after_save(user_id, req.day_time_windows)
     return CreateSlotResponse(id=slot_id)
 
 

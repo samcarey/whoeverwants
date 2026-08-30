@@ -29,6 +29,7 @@
 
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import InitialBubble from "@/components/InitialBubble";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import type { ActivitySuggestion, Slot, SlotEvent } from "@/lib/api/slots";
 import {
   activityColor,
@@ -60,6 +61,13 @@ interface SlotCardProps {
   suggested: ActivitySuggestion[];
   /** Open the suggested-activities modal (add / silence live there). */
   onOpenSuggested: (slot: Slot) => void;
+}
+
+/** The instant the event starts, as an ISO string for the poll timer. Local
+ *  wall clock (the slot convention — day/times carry no timezone), falling
+ *  back to end-of-day when the card has no "@ time" yet. */
+export function eventStartIso(ev: SlotEvent): string {
+  return new Date(`${ev.day}T${ev.time ?? "23:59"}:00`).toISOString();
 }
 
 /** "HH:MM" → a compact 12h clock ("2 PM", "2:30 PM"). */
@@ -210,9 +218,10 @@ function EventCard({
               </span>
             )}
           </div>
-          {/* Only Confirm is a live button (stopPropagation so it doesn't also
-              open the page); the rest are indicators — the card tap handles
-              navigation. */}
+          {/* Only Confirm is a live button (stopPropagation so it doesn't
+              also open the page); the rest are indicators — the card tap
+              handles navigation. (Line 3, when an attached poll started,
+              renders below this row.) */}
           {going ? (
             <span className="shrink-0 whitespace-nowrap rounded-full bg-green-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white">
               You&apos;re going!
@@ -239,6 +248,25 @@ function EventCard({
             </button>
           )}
         </div>
+        {/* Line 3 — the gathering's ACTIVE poll (started from an attached
+            activity draft): its title + a countdown to the event start (the
+            window to vote in). The card tap opens the event page, where the
+            poll's Vote button lives. */}
+        {ev.poll && !ev.poll.is_closed && (
+          <span className="flex items-center gap-1 min-w-0 text-[11px] font-normal text-gray-500 dark:text-gray-400">
+            <span aria-hidden="true">📊</span>
+            <span className="min-w-0 truncate">{ev.poll.title ?? "Poll"}</span>
+            <span className="ml-auto shrink-0 tabular-nums">
+              <SimpleCountdown
+                deadline={eventStartIso(ev)}
+                compact
+                blankOnExpire
+                colorClass="text-blue-600 dark:text-blue-400"
+                numberClass="font-semibold"
+              />
+            </span>
+          </span>
+        )}
       </div>
     </div>
   );
