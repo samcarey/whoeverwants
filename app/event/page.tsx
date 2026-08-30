@@ -5,10 +5,10 @@
  * (`/event?day=YYYY-MM-DD&activity=Name[&id=<party uuid>]`). Shows the full
  * gathering: title @ time with the status pill, everyone wanting to go (You +
  * each confirmed person), and the viewer's own who-with conditions for the
- * activity (read-only — editing stays in the activity sheet). The bottom
- * action is where cancelling lives: "Back Out" when confirmed (the playlist
- * card deliberately has no cancel), "Confirm" when joinable, a dead "Full"
- * otherwise.
+ * activity (read-only — editing stays in the activity sheet). The action sits
+ * right under the title block (above "Who's in") and is where cancelling
+ * lives: "Back Out" when confirmed (the playlist card deliberately has no
+ * cancel), "Confirm" when joinable, a dead "Full" otherwise.
  *
  * Everything is re-derived from the same polled `/api/slots/events` list the
  * playlist uses, so the page tracks live changes (someone filling the party
@@ -245,7 +245,7 @@ function EventPageInner() {
       >
         <div
           className="mx-auto max-w-md px-4"
-          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.75rem)", paddingBottom: "2rem" }}
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 2.25rem)", paddingBottom: "1.5rem" }}
         >
           {!ev ? (
             <div className="py-16 text-center text-gray-500 dark:text-gray-400">
@@ -254,7 +254,7 @@ function EventPageInner() {
           ) : (
             <>
               {/* Title block: emoji + activity, the day, @ time, status. */}
-              <div className="flex flex-col items-center gap-2 text-center">
+              <div className="flex flex-col items-center gap-1 text-center">
                 <div className="text-5xl leading-none">{ev.emoji ?? "📅"}</div>
                 <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{ev.activity}</h1>
                 <p className="text-gray-500 dark:text-gray-400">
@@ -265,16 +265,49 @@ function EventPageInner() {
                 {statusPill}
               </div>
 
+              {/* The action lives right under the title block (Back Out when
+                  confirmed — the playlist card deliberately has no cancel). */}
+              <div className="mt-2.5">
+                {ev.viewer_confirmed ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirmingBackOut(true)}
+                    className="w-full rounded-2xl bg-red-50 py-2.5 font-medium text-red-600 transition active:bg-red-100 disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:active:bg-red-900/50"
+                  >
+                    Back Out
+                  </button>
+                ) : ev.can_confirm ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void setConfirmed(true)}
+                    className="w-full rounded-2xl bg-blue-600 py-2.5 font-medium text-white transition active:bg-blue-700 disabled:opacity-50"
+                  >
+                    Confirm
+                  </button>
+                ) : short ? (
+                  <div className="w-full rounded-2xl bg-amber-50 py-2.5 text-center font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                    Needs {ev.needed} more {ev.needed === 1 ? "person" : "people"} — share the
+                    activity to make it happen
+                  </div>
+                ) : (
+                  <div className="w-full rounded-2xl bg-gray-100 py-2.5 text-center font-medium text-gray-400 dark:bg-gray-800 dark:text-gray-500">
+                    Full — someone would be left out if you joined
+                  </div>
+                )}
+              </div>
+
               {/* Everyone wanting to go. */}
-              <section className="mt-8">
-                <h2 className="mb-2 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
+              <section className="mt-4">
+                <h2 className="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
                   Who&apos;s in
                 </h2>
-                <div className="rounded-3xl bg-gray-50 px-4 py-2 dark:bg-gray-800">
+                <div className="rounded-3xl bg-gray-50 px-4 py-1.5 dark:bg-gray-800">
                   {ev.viewer_confirmed || ev.confirmed_names.length > 0 ? (
                     <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                       {ev.viewer_confirmed && (
-                        <li className="flex items-center gap-3 py-2.5">
+                        <li className="flex items-center gap-3 py-1.5">
                           {/* name=null → the anonymous disc unless a profile
                               photo is set (the /info members-list convention
                               for the viewer's own row). */}
@@ -283,14 +316,14 @@ function EventPageInner() {
                         </li>
                       )}
                       {ev.confirmed_names.map((n, i) => (
-                        <li key={`${n}#${i}`} className="flex items-center gap-3 py-2.5">
+                        <li key={`${n}#${i}`} className="flex items-center gap-3 py-1.5">
                           <InitialBubble name={n} sizeClassName="w-8 h-8" />
                           <span className="text-gray-900 dark:text-gray-100">{n}</span>
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <p className="py-2.5 text-gray-500 dark:text-gray-400">No one has confirmed yet.</p>
+                    <p className="py-1.5 text-gray-500 dark:text-gray-400">No one has confirmed yet.</p>
                   )}
                 </div>
               </section>
@@ -299,11 +332,11 @@ function EventPageInner() {
                   draft the moment the event became possible). Voting happens
                   on the poll's own page — this is the way in. */}
               {ev.poll && ev.poll.group_short_id && ev.poll.poll_short_id && (
-                <section className="mt-6">
-                  <h2 className="mb-2 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
+                <section className="mt-4">
+                  <h2 className="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
                     Poll
                   </h2>
-                  <div className="rounded-3xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
+                  <div className="rounded-3xl bg-gray-50 px-4 py-2.5 dark:bg-gray-800">
                     <div className="flex items-center gap-2">
                       <span aria-hidden="true" className="shrink-0 text-xl leading-none">📊</span>
                       <span className="min-w-0 flex-1 truncate text-base text-gray-900 dark:text-gray-100">
@@ -331,7 +364,7 @@ function EventPageInner() {
                           "forward",
                         )
                       }
-                      className="mt-3 w-full rounded-2xl bg-blue-600 py-2.5 font-medium text-white transition active:bg-blue-700"
+                      className="mt-2 w-full rounded-2xl bg-blue-600 py-2 font-medium text-white transition active:bg-blue-700"
                     >
                       {ev.poll.is_closed ? "See Results" : "Vote"}
                     </button>
@@ -341,27 +374,27 @@ function EventPageInner() {
 
               {/* The viewer's own who-with condition (read-only). */}
               {condition && (
-                <section className="mt-6">
-                  <h2 className="mb-2 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
+                <section className="mt-4">
+                  <h2 className="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
                     Your conditions
                   </h2>
                   <div className="rounded-3xl bg-gray-50 px-4 dark:bg-gray-800">
                     <div className="divide-y divide-gray-200 dark:divide-gray-700 text-base">
-                      <div className="flex min-h-12 items-center justify-between gap-3 py-2">
+                      <div className="flex min-h-10 items-center justify-between gap-3 py-1.5">
                         <span className="shrink-0">With</span>
                         <RefPills refs={withRefs} empty="Anyone" />
                       </div>
-                      <div className="flex h-12 items-center justify-between gap-3">
+                      <div className="flex h-10 items-center justify-between gap-3">
                         <span>At Least</span>
                         <span className="text-gray-500 dark:text-gray-500">{partyCountLabel(minPeople)}</span>
                       </div>
-                      <div className="flex h-12 items-center justify-between gap-3">
+                      <div className="flex h-10 items-center justify-between gap-3">
                         <span>No More Than</span>
                         <span className="text-gray-500 dark:text-gray-500">
                           {maxPeople ? partyCountLabel(maxPeople) : "—"}
                         </span>
                       </div>
-                      <div className="flex min-h-12 items-center justify-between gap-3 py-2">
+                      <div className="flex min-h-10 items-center justify-between gap-3 py-1.5">
                         <span className="shrink-0">Without</span>
                         <RefPills refs={withoutRefs} empty="—" />
                       </div>
@@ -370,37 +403,6 @@ function EventPageInner() {
                 </section>
               )}
 
-              {/* The action: Back Out lives HERE, not on the playlist card. */}
-              <div className="mt-8">
-                {ev.viewer_confirmed ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setConfirmingBackOut(true)}
-                    className="w-full rounded-2xl bg-red-50 py-3 font-medium text-red-600 transition active:bg-red-100 disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:active:bg-red-900/50"
-                  >
-                    Back Out
-                  </button>
-                ) : ev.can_confirm ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void setConfirmed(true)}
-                    className="w-full rounded-2xl bg-blue-600 py-3 font-medium text-white transition active:bg-blue-700 disabled:opacity-50"
-                  >
-                    Confirm
-                  </button>
-                ) : short ? (
-                  <div className="w-full rounded-2xl bg-amber-50 py-3 text-center font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-                    Needs {ev.needed} more {ev.needed === 1 ? "person" : "people"} — share the
-                    activity to make it happen
-                  </div>
-                ) : (
-                  <div className="w-full rounded-2xl bg-gray-100 py-3 text-center font-medium text-gray-400 dark:bg-gray-800 dark:text-gray-500">
-                    Full — someone would be left out if you joined
-                  </div>
-                )}
-              </div>
             </>
           )}
         </div>
