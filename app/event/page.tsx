@@ -3,12 +3,13 @@
 /**
  * The event's own page — tapped through from a playlist event card
  * (`/event?day=YYYY-MM-DD&activity=Name[&id=<party uuid>]`). Shows the full
- * gathering: title @ time with the status pill, everyone wanting to go (You +
- * each confirmed person), and the viewer's own who-with conditions for the
- * activity (read-only — editing stays in the activity sheet). The action sits
- * right under the title block (above "Who's in") and is where cancelling
- * lives: "Back Out" when confirmed (the playlist card deliberately has no
- * cancel), "Confirm" when joinable, a dead "Full" otherwise.
+ * gathering: title @ time with the status pill, a "Based on your interest ›"
+ * link under the title (opens the layout-level activity edit sheet for the
+ * slot activity behind this event — conditions live there), and everyone
+ * wanting to go (You + each confirmed person). The action sits right under
+ * the title block (above "Who's in") and is where cancelling lives: "Back
+ * Out" when confirmed (the playlist card deliberately has no cancel),
+ * "Confirm" when joinable, a dead "Full" otherwise.
  *
  * Everything is re-derived from the same polled `/api/slots/events` list the
  * playlist uses, so the page tracks live changes (someone filling the party
@@ -32,9 +33,8 @@ import InitialBubble from "@/components/InitialBubble";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { eventStartIso } from "@/components/SlotCard";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
-import { GroupGlyph } from "@/components/CandidatePicker";
-import { partyCountLabel } from "@/components/PartyCountField";
 import { haptic } from "@/lib/haptics";
+import { openSlotSheet, SLOTS_CHANGED_EVENT } from "@/lib/slotEvents";
 import {
   apiGetSlotEvents,
   apiListSlots,
@@ -43,7 +43,6 @@ import {
   getCachedSlots,
   type Slot,
   type SlotEvent,
-  type WhoWithRef,
 } from "@/lib/api/slots";
 import { getRelativeDayLabel } from "@/lib/timeUtils";
 
@@ -58,26 +57,6 @@ function fmtClock(hhmm: string): string {
 function fmtDate(day: string): string {
   const d = new Date(day + "T00:00:00");
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-}
-
-/** Condition pills for a who-with ref list ("With" / "Without" rows). */
-function RefPills({ refs, empty }: { refs: WhoWithRef[]; empty: string }) {
-  if (refs.length === 0) {
-    return <span className="text-gray-500 dark:text-gray-500">{empty}</span>;
-  }
-  return (
-    <span className="flex flex-wrap justify-end gap-1.5">
-      {refs.map((r, i) => (
-        <span
-          key={`${r.id ?? r.name}#${i}`}
-          className="inline-flex items-center gap-1 rounded-full bg-gray-200 px-2 py-0.5 text-sm text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-        >
-          {r.id !== undefined && (r as { kind?: string }).kind === "groups" ? <GroupGlyph className="w-3.5 h-3.5 shrink-0" /> : null}
-          {r.name}
-        </span>
-      ))}
-    </span>
-  );
 }
 
 function EventPageInner() {
@@ -143,27 +122,28 @@ function EventPageInner() {
     );
   }, [events, day, key, partyId]);
 
-  // The viewer's own who-with condition for this activity (from their slot on
-  // this day) — display-only here; the activity sheet is where it's edited.
-  const condition = useMemo(() => {
+  // The slot activity behind this event (the viewer's own tag of it on this
+  // day) — "Based on your interest ›" opens the activity edit sheet on it,
+  // which is where the who-with conditions live.
+  const interest = useMemo(() => {
     for (const slot of slots ?? []) {
       if (!slot.day_time_windows?.some((d) => d.day === day)) continue;
-      const a = slot.activities.find((x) => x.name.trim().toLowerCase() === key);
-      if (a) return a;
+      const index = slot.activities.findIndex((x) => x.name.trim().toLowerCase() === key);
+      if (index >= 0) return { slot, index };
     }
     return null;
   }, [slots, day, key]);
-  const entry = condition?.who_with?.[0] ?? null;
-  const withRefs = [
-    ...(entry?.groups ?? []).map((r) => ({ ...r, kind: "groups" })),
-    ...(entry?.people ?? []).map((r) => ({ ...r, kind: "people" })),
-  ];
-  const withoutRefs = [
-    ...(entry?.exclude_groups ?? []).map((r) => ({ ...r, kind: "groups" })),
-    ...(entry?.exclude_people ?? []).map((r) => ({ ...r, kind: "people" })),
-  ];
-  const minPeople = entry?.min_people ?? condition?.min_people ?? 1;
-  const maxPeople = entry?.max_people ?? condition?.max_people ?? null;
+
+  // An edit in the activity sheet (renamed activity, changed conditions) can
+  // reshape this event — refresh both feeds when the sheet saves.
+  useEffect(() => {
+    const onChanged = () => {
+      void refresh();
+      apiListSlots().then(setSlots).catch(() => {});
+    };
+    window.addEventListener(SLOTS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(SLOTS_CHANGED_EVENT, onChanged);
+  }, [refresh]);
 
   const setConfirmed = useCallback(
     async (confirmed: boolean) => {
@@ -263,6 +243,20 @@ function EventPageInner() {
                   {ev.time && <> · {fmtClock(ev.time)}</>}
                 </p>
                 {statusPill}
+                {/* The slot activity this proposal grew from; conditions
+                    (With / At Least / Without…) are edited there. */}
+                {interest && (
+                  <button
+                    type="button"
+                    onClick={() => openSlotSheet(interest.slot, "activity", interest.index)}
+                    className="flex items-center gap-0.5 text-sm text-gray-500 dark:text-gray-400 active:opacity-70"
+                  >
+                    Based on your interest
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
               </div>
 
               {/* The action lives right under the title block (Back Out when
@@ -368,37 +362,6 @@ function EventPageInner() {
                     >
                       {ev.poll.is_closed ? "See Results" : "Vote"}
                     </button>
-                  </div>
-                </section>
-              )}
-
-              {/* The viewer's own who-with condition (read-only). */}
-              {condition && (
-                <section className="mt-4">
-                  <h2 className="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
-                    Your conditions
-                  </h2>
-                  <div className="rounded-3xl bg-gray-50 px-4 dark:bg-gray-800">
-                    <div className="divide-y divide-gray-200 dark:divide-gray-700 text-base">
-                      <div className="flex min-h-10 items-center justify-between gap-3 py-1.5">
-                        <span className="shrink-0">With</span>
-                        <RefPills refs={withRefs} empty="Anyone" />
-                      </div>
-                      <div className="flex h-10 items-center justify-between gap-3">
-                        <span>At Least</span>
-                        <span className="text-gray-500 dark:text-gray-500">{partyCountLabel(minPeople)}</span>
-                      </div>
-                      <div className="flex h-10 items-center justify-between gap-3">
-                        <span>No More Than</span>
-                        <span className="text-gray-500 dark:text-gray-500">
-                          {maxPeople ? partyCountLabel(maxPeople) : "—"}
-                        </span>
-                      </div>
-                      <div className="flex min-h-10 items-center justify-between gap-3 py-1.5">
-                        <span className="shrink-0">Without</span>
-                        <RefPills refs={withoutRefs} empty="—" />
-                      </div>
-                    </div>
                   </div>
                 </section>
               )}
