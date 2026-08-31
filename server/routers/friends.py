@@ -73,10 +73,16 @@ class FriendRequestRef(PersonRef):
     created_at: datetime | None = None
 
 
+class GroupRef(BaseModel):
+    id: str
+    name: str
+
+
 class ContactGroupResponse(BaseModel):
     id: str
     name: str
     members: list[PersonRef]
+    child_groups: list[GroupRef] = []
 
 
 class FriendsOverviewResponse(BaseModel):
@@ -102,11 +108,13 @@ class BlockBody(BaseModel):
 class CreateGroupBody(BaseModel):
     name: str
     member_ids: list[str] = []
+    child_group_ids: list[str] = []
 
 
 class UpdateGroupBody(BaseModel):
     name: str | None = None
     member_ids: list[str] | None = None
+    child_group_ids: list[str] | None = None
 
 
 class ProfileResponse(BaseModel):
@@ -260,8 +268,12 @@ def create_group(req: CreateGroupBody, request: Request):
         group_id = create_contact_group(conn, user_id, name)
         if not group_id:
             raise HTTPException(status_code=409, detail="You already have a group with that name")
-        if req.member_ids:
-            update_contact_group(conn, user_id, group_id, member_ids=req.member_ids)
+        if req.member_ids or req.child_group_ids:
+            update_contact_group(
+                conn, user_id, group_id,
+                member_ids=req.member_ids or None,
+                child_group_ids=req.child_group_ids or None,
+            )
         return {"id": group_id, "name": name}
 
 
@@ -272,7 +284,9 @@ def update_group(group_id: str, req: UpdateGroupBody, request: Request):
         require_uuid(group_id, "group id")
         name = _clean_group_name(req.name) if req.name is not None else None
         ok = update_contact_group(
-            conn, user_id, group_id, name=name, member_ids=req.member_ids
+            conn, user_id, group_id, name=name,
+            member_ids=req.member_ids,
+            child_group_ids=req.child_group_ids,
         )
         if not ok:
             raise HTTPException(status_code=404, detail="Group not found")

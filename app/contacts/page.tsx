@@ -57,6 +57,7 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import SignInModal from "@/components/SignInModal";
 import AccountGateModal from "@/components/AccountGateModal";
 import CandidatePicker, { type Candidate } from "@/components/CandidatePicker";
+import { openUserProfileCard } from "@/lib/useUserProfile";
 
 const CARD_CLASS =
   "rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700";
@@ -84,6 +85,25 @@ function Avatar({ person }: { person: FriendPerson }) {
       }
       sizeClassName="w-8 h-8"
     />
+  );
+}
+
+/** Avatar + name as one tap target → the shared profile modal (the same
+ *  card the group rosters open on long-press: photo, joined-ago, shared
+ *  groups). */
+function PersonButton({ person }: { person: FriendPerson }) {
+  return (
+    <button
+      type="button"
+      onClick={() => openUserProfileCard(person.user_id, person.name ?? undefined)}
+      className="flex flex-1 min-w-0 items-center gap-3 text-left"
+      aria-label={`View ${personLabel(person)}'s profile`}
+    >
+      <Avatar person={person} />
+      <span className="flex-1 min-w-0 truncate text-gray-900 dark:text-gray-100">
+        {personLabel(person)}
+      </span>
+    </button>
   );
 }
 
@@ -231,18 +251,75 @@ export default function ContactsPage() {
     );
   };
 
-  const addGroupMember = (group: ContactGroup, c: Candidate) => {
-    if (!c.id) return;
-    const current = group.members.map((m) => m.user_id);
-    if (current.includes(c.id)) return;
-    setGroupMembers(group, [...current, c.id]);
+  const setGroupChildren = (group: ContactGroup, next: string[]) => {
+    // Optimistic mirror of setGroupMembers, for nested groups.
+    setOverview((prev) => {
+      if (!prev) return prev;
+      const groupsById = new Map(prev.groups.map((g) => [g.id, g]));
+      return {
+        ...prev,
+        groups: prev.groups.map((g) =>
+          g.id === group.id
+            ? {
+                ...g,
+                child_groups: next
+                  .map((id) => groupsById.get(id))
+                  .filter((cg): cg is ContactGroup => !!cg)
+                  .map((cg) => ({ id: cg.id, name: cg.name })),
+              }
+            : g,
+        ),
+      };
+    });
+    void runAction(
+      () => apiUpdateContactGroup(group.id, { childGroupIds: next }),
+      "Couldn't update the group",
+    );
   };
 
-  const removeGroupMember = (group: ContactGroup, c: Candidate) => {
-    setGroupMembers(
-      group,
-      group.members.map((m) => m.user_id).filter((id) => id !== c.id),
-    );
+  const addGroupPick = (group: ContactGroup, c: Candidate) => {
+    if (!c.id) return;
+    if (c.kind === "groups") {
+      const current = group.child_groups.map((cg) => cg.id);
+      if (current.includes(c.id)) return;
+      setGroupChildren(group, [...current, c.id]);
+    } else {
+      const current = group.members.map((m) => m.user_id);
+      if (current.includes(c.id)) return;
+      setGroupMembers(group, [...current, c.id]);
+    }
+  };
+
+  const removeGroupPick = (group: ContactGroup, c: Candidate) => {
+    if (c.kind === "groups") {
+      setGroupChildren(
+        group,
+        group.child_groups.map((cg) => cg.id).filter((id) => id !== c.id),
+      );
+    } else {
+      setGroupMembers(
+        group,
+        group.members.map((m) => m.user_id).filter((id) => id !== c.id),
+      );
+    }
+  };
+
+  /** Groups that can reach `groupId` down the nesting tree (itself + its
+   *  ancestors) — excluded from its picker so a pick can't create a cycle
+   *  (the server silently refuses them too). */
+  const cycleForbiddenIds = (groups: ContactGroup[], groupId: string): Set<string> => {
+    const childrenOf = new Map(groups.map((g) => [g.id, g.child_groups.map((c) => c.id)]));
+    const reaches = (from: string, target: string, seen: Set<string>): boolean => {
+      if (from === target) return true;
+      if (seen.has(from)) return false;
+      seen.add(from);
+      return (childrenOf.get(from) ?? []).some((c) => reaches(c, target, seen));
+    };
+    const forbidden = new Set([groupId]);
+    for (const g of groups) {
+      if (g.id !== groupId && reaches(groupId, g.id, new Set())) forbidden.add(g.id);
+    }
+    return forbidden;
   };
 
   const createGroup = () => {
@@ -373,10 +450,7 @@ export default function ContactsPage() {
                   <div className={CARD_CLASS}>
                     {overview.incoming.map((req) => (
                       <div key={req.id} className="flex items-center gap-3 py-2.5 min-h-12">
-                        <Avatar person={req} />
-                        <span className="flex-1 min-w-0 truncate text-gray-900 dark:text-gray-100">
-                          {personLabel(req)}
-                        </span>
+                        <PersonButton person={req} />
                         <button
                           type="button"
                           onClick={() =>
@@ -450,10 +524,7 @@ export default function ContactsPage() {
                   )}
                   {overview.friends.map((friend) => (
                     <div key={friend.user_id} className="flex items-center gap-3 py-2.5 min-h-12">
-                      <Avatar person={friend} />
-                      <span className="flex-1 min-w-0 truncate text-gray-900 dark:text-gray-100">
-                        {personLabel(friend)}
-                      </span>
+                      <PersonButton person={friend} />
                       <button
                         type="button"
                         onClick={() => setPendingAction({ kind: "unfriend", person: friend })}
@@ -480,10 +551,7 @@ export default function ContactsPage() {
                   <div className={CARD_CLASS}>
                     {overview.outgoing.map((req) => (
                       <div key={req.id} className="flex items-center gap-3 py-2.5 min-h-12">
-                        <Avatar person={req} />
-                        <span className="flex-1 min-w-0 truncate text-gray-900 dark:text-gray-100">
-                          {personLabel(req)}
-                        </span>
+                        <PersonButton person={req} />
                         <span className="shrink-0 text-sm text-gray-400 dark:text-gray-500">
                           Requested
                         </span>
@@ -491,10 +559,7 @@ export default function ContactsPage() {
                     ))}
                     {overview.suggestions.map((person) => (
                       <div key={person.user_id} className="flex items-center gap-3 py-2.5 min-h-12">
-                        <Avatar person={person} />
-                        <span className="flex-1 min-w-0 truncate text-gray-900 dark:text-gray-100">
-                          {personLabel(person)}
-                        </span>
+                        <PersonButton person={person} />
                         {requestedIds.has(person.user_id) || outgoingIds.has(person.user_id) ? (
                           <span className="shrink-0 text-sm text-gray-400 dark:text-gray-500">
                             Requested
@@ -600,7 +665,9 @@ export default function ContactsPage() {
                             {group.name}
                           </span>
                           <span className="shrink-0 text-sm text-gray-400 dark:text-gray-500">
-                            {group.members.length || "No"} {group.members.length === 1 ? "person" : "people"}
+                            {group.child_groups.length > 0
+                              ? `${group.child_groups.length} ${group.child_groups.length === 1 ? "group" : "groups"}${group.members.length ? ` · ${group.members.length} ${group.members.length === 1 ? "person" : "people"}` : ""}`
+                              : `${group.members.length || "No"} ${group.members.length === 1 ? "person" : "people"}`}
                           </span>
                           <svg
                             className={`w-4 h-4 shrink-0 text-gray-400 transition-transform ${expanded ? "rotate-90" : ""}`}
@@ -625,20 +692,42 @@ export default function ContactsPage() {
                               <CandidatePicker
                                 label="Members"
                                 emptyValue="No one yet"
-                                selected={group.members.map((m) => ({
-                                  kind: "people" as const,
-                                  id: m.user_id,
-                                  name: personLabel(m),
-                                }))}
-                                options={[...overview.friends]
-                                  .sort((a, b) => personLabel(b).localeCompare(personLabel(a)))
-                                  .map((f) => ({
+                                selected={[
+                                  ...group.child_groups.map((cg) => ({
+                                    kind: "groups" as const,
+                                    id: cg.id,
+                                    name: cg.name,
+                                  })),
+                                  ...group.members.map((m) => ({
                                     kind: "people" as const,
-                                    id: f.user_id,
-                                    name: personLabel(f),
-                                  }))}
-                                onAdd={(c) => addGroupMember(group, c)}
-                                onRemove={(c) => removeGroupMember(group, c)}
+                                    id: m.user_id,
+                                    name: personLabel(m),
+                                  })),
+                                ]}
+                                options={(() => {
+                                  // Groups then people, both reverse-alpha:
+                                  // after the picker's reverse the list reads
+                                  // people (A→Z) nearest the box, then groups.
+                                  const forbidden = cycleForbiddenIds(overview.groups, group.id);
+                                  const groupOpts = overview.groups
+                                    .filter((g) => !forbidden.has(g.id))
+                                    .sort((a, b) => b.name.localeCompare(a.name))
+                                    .map((g) => ({
+                                      kind: "groups" as const,
+                                      id: g.id,
+                                      name: g.name,
+                                    }));
+                                  const peopleOpts = [...overview.friends]
+                                    .sort((a, b) => personLabel(b).localeCompare(personLabel(a)))
+                                    .map((f) => ({
+                                      kind: "people" as const,
+                                      id: f.user_id,
+                                      name: personLabel(f),
+                                    }));
+                                  return [...groupOpts, ...peopleOpts];
+                                })()}
+                                onAdd={(c) => addGroupPick(group, c)}
+                                onRemove={(c) => removeGroupPick(group, c)}
                               />
                             )}
                             <button

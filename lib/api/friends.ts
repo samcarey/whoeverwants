@@ -21,10 +21,17 @@ export interface FriendRequestRef extends FriendPerson {
   created_at?: string | null;
 }
 
+export interface ContactGroupRef {
+  id: string;
+  name: string;
+}
+
 export interface ContactGroup {
   id: string;
   name: string;
   members: FriendPerson[];
+  /** Nested groups (same owner; the server refuses cycles). */
+  child_groups: ContactGroupRef[];
 }
 
 export interface FriendsOverview {
@@ -107,13 +114,14 @@ export function apiCreateContactGroup(
 
 export function apiUpdateContactGroup(
   groupId: string,
-  opts: { name?: string; memberIds?: string[] },
+  opts: { name?: string; memberIds?: string[]; childGroupIds?: string[] },
 ): Promise<{ status: string }> {
   return friendFetch<{ status: string }>(`/groups/${groupId}`, {
     method: "PUT",
     body: JSON.stringify({
       name: opts.name ?? null,
       member_ids: opts.memberIds ?? null,
+      child_group_ids: opts.childGroupIds ?? null,
     }),
   });
 }

@@ -477,6 +477,7 @@ def list_contact_groups(conn, user_id: str) -> list[dict]:
     ).fetchall()
     if not groups:
         return []
+    gids = [g["id"] for g in groups]
     members = conn.execute(
         """
         SELECT m.group_id::text AS group_id,
@@ -487,18 +488,36 @@ def list_contact_groups(conn, user_id: str) -> list[dict]:
          WHERE m.group_id = ANY(%(gids)s::uuid[])
          ORDER BY u.display_name ASC NULLS LAST
         """,
-        {"gids": [g["id"] for g in groups]},
+        {"gids": gids},
+    ).fetchall()
+    children = conn.execute(
+        """
+        SELECT c.group_id::text AS group_id,
+               c.child_group_id::text AS child_id,
+               g.name
+          FROM contact_group_children c
+          JOIN contact_groups g ON g.id = c.child_group_id
+         WHERE c.group_id = ANY(%(gids)s::uuid[])
+         ORDER BY LOWER(g.name) ASC
+        """,
+        {"gids": gids},
     ).fetchall()
     by_group: dict[str, list[dict]] = {}
     for m in members:
         by_group.setdefault(m["group_id"], []).append(
             {"user_id": m["user_id"], "name": m.get("name")}
         )
+    children_by_group: dict[str, list[dict]] = {}
+    for c in children:
+        children_by_group.setdefault(c["group_id"], []).append(
+            {"id": c["child_id"], "name": c["name"]}
+        )
     return [
         {
             "id": g["id"],
             "name": g["name"],
             "members": by_group.get(g["id"], []),
+            "child_groups": children_by_group.get(g["id"], []),
         }
         for g in groups
     ]
@@ -520,6 +539,26 @@ def create_contact_group(conn, user_id: str, name: str) -> str | None:
     return row["id"] if row else None
 
 
+def group_descendant_ids(conn, group_id: str) -> set[str]:
+    """Every group reachable DOWN the nesting tree from `group_id`
+    (excluding itself). UNION (not UNION ALL) so a legacy cycle can't
+    loop the recursion."""
+    rows = conn.execute(
+        """
+        WITH RECURSIVE d AS (
+            SELECT child_group_id FROM contact_group_children
+             WHERE group_id = %(g)s::uuid
+            UNION
+            SELECT c.child_group_id FROM d
+              JOIN contact_group_children c ON c.group_id = d.child_group_id
+        )
+        SELECT child_group_id::text AS id FROM d
+        """,
+        {"g": group_id},
+    ).fetchall()
+    return {r["id"] for r in rows}
+
+
 def update_contact_group(
     conn,
     user_id: str,
@@ -527,10 +566,13 @@ def update_contact_group(
     *,
     name: str | None = None,
     member_ids: list[str] | None = None,
+    child_group_ids: list[str] | None = None,
 ) -> bool:
-    """Rename and/or replace membership. Members are silently filtered to
-    the owner's accepted friends. Returns False when the group isn't
-    theirs."""
+    """Rename and/or replace membership (people and/or nested groups).
+    Members are silently filtered to the owner's accepted friends; child
+    groups to the owner's OWN groups, excluding itself and anything that
+    would create a cycle (a candidate child whose descendants include this
+    group). Returns False when the group isn't theirs."""
     owned = conn.execute(
         """
         SELECT 1 FROM contact_groups
@@ -576,6 +618,30 @@ def update_contact_group(
                 """,
                 {"g": group_id, "m": uid},
             )
+    if child_group_ids is not None:
+        own = set(contact_group_names(conn, user_id))
+        keep_children = []
+        for cid in dict.fromkeys(child_group_ids):
+            if cid == group_id or cid not in own:
+                continue
+            # No cycles: adding X under G is illegal when G is reachable
+            # from X (X's descendant closure contains G).
+            if group_id in group_descendant_ids(conn, cid):
+                continue
+            keep_children.append(cid)
+        conn.execute(
+            "DELETE FROM contact_group_children WHERE group_id = %(g)s::uuid",
+            {"g": group_id},
+        )
+        for cid in keep_children:
+            conn.execute(
+                """
+                INSERT INTO contact_group_children (group_id, child_group_id)
+                VALUES (%(g)s::uuid, %(c)s::uuid)
+                ON CONFLICT DO NOTHING
+                """,
+                {"g": group_id, "c": cid},
+            )
     return True
 
 
@@ -594,15 +660,24 @@ def delete_contact_group(conn, user_id: str, group_id: str) -> bool:
 def contact_group_memberships(conn, group_ids: set[str] | list[str]) -> dict[str, set[str]]:
     """{contact_group_id: {member user_ids}} for the given ids — merged into
     slot_events' membership map so who-with contact-group refs resolve in
-    matching."""
+    matching. TRANSITIVE over nesting: a group's people include everyone in
+    its child groups, recursively (UNION dedupes + makes a legacy cycle
+    harmless)."""
     gids = [str(g) for g in group_ids]
     if not gids:
         return {}
     rows = conn.execute(
         """
-        SELECT group_id::text AS gid, member_user_id::text AS uid
-          FROM contact_group_members
-         WHERE group_id = ANY(%(gids)s::uuid[])
+        WITH RECURSIVE tree AS (
+            SELECT id AS root_id, id AS node_id FROM contact_groups
+             WHERE id = ANY(%(gids)s::uuid[])
+            UNION
+            SELECT t.root_id, c.child_group_id FROM tree t
+              JOIN contact_group_children c ON c.group_id = t.node_id
+        )
+        SELECT t.root_id::text AS gid, m.member_user_id::text AS uid
+          FROM tree t
+          JOIN contact_group_members m ON m.group_id = t.node_id
         """,
         {"gids": gids},
     ).fetchall()

@@ -460,3 +460,87 @@ def test_blocked_users_activities_not_suggested(client):
     )
     all_names = [s["name"] for g in r.json().values() for s in g]
     assert act not in all_names
+
+
+# ---------------------------------------------------------------------------
+# Nested contact groups (migration 159)
+# ---------------------------------------------------------------------------
+
+def test_nested_groups_round_trip_and_cycle_refused(client):
+    a_bid, a_uid = _person(client, "Faye")
+    b_bid, b_uid = _person(client, "Gus")
+    _befriend(client, a_bid, b_bid, b_uid, a_uid)
+    inner = client.post(
+        "/api/friends/groups",
+        json={"name": _act("Inner"), "member_ids": [b_uid]},
+        headers=bid_headers(a_bid),
+    ).json()["id"]
+    outer = client.post(
+        "/api/friends/groups",
+        json={"name": _act("Outer"), "child_group_ids": [inner]},
+        headers=bid_headers(a_bid),
+    ).json()["id"]
+
+    groups = {g["id"]: g for g in _overview(client, a_bid)["groups"]}
+    assert [c["id"] for c in groups[outer]["child_groups"]] == [inner]
+
+    # Cycle refused: Inner can't contain Outer (silently dropped, like
+    # non-friend members). Self-containment refused too.
+    r = client.put(
+        f"/api/friends/groups/{inner}",
+        json={"child_group_ids": [outer, inner]},
+        headers=bid_headers(a_bid),
+    )
+    assert r.status_code == 200
+    groups = {g["id"]: g for g in _overview(client, a_bid)["groups"]}
+    assert groups[inner]["child_groups"] == []
+    # The original nesting is untouched.
+    assert [c["id"] for c in groups[outer]["child_groups"]] == [inner]
+
+
+def test_nested_group_ref_expands_in_matching(client):
+    """A With pick of an OUTER group admits people who are only members of
+    its nested INNER group — the recursive expansion in matching."""
+    a_bid, a_uid = _person(client, "Hana")
+    b_bid, b_uid = _person(client, "Ivo")
+    _befriend(client, a_bid, b_bid, b_uid, a_uid)
+    act, day = _act("Poker"), _day(4)
+    inner = client.post(
+        "/api/friends/groups",
+        json={"name": _act("Inner Circle"), "member_ids": [b_uid]},
+        headers=bid_headers(a_bid),
+    ).json()["id"]
+    outer = client.post(
+        "/api/friends/groups",
+        json={"name": _act("Everyone"), "child_group_ids": [inner]},
+        headers=bid_headers(a_bid),
+    ).json()["id"]
+
+    r = client.post(
+        "/api/slots",
+        json={
+            "day_time_windows": _dtw(day),
+            "activities": [
+                {
+                    "name": act,
+                    "who_with": [
+                        {
+                            "min_people": 2,
+                            "max_people": None,
+                            "groups": [{"id": outer, "name": "Everyone"}],
+                            "people": [],
+                            "exclude_groups": [],
+                            "exclude_people": [],
+                        }
+                    ],
+                }
+            ],
+        },
+        headers=bid_headers(a_bid),
+    )
+    assert r.status_code == 200, r.text
+    _create_slot(client, browser_id=b_bid, day=day, activity=act)
+
+    # B satisfies A's include only via Inner nested under Everyone.
+    a_cards = [e for e in _events(client, a_bid) if e["activity"].lower() == act.lower()]
+    assert a_cards, "outer-group pick should admit the nested group's member"
