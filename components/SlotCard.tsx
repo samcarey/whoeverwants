@@ -53,7 +53,6 @@ interface SlotCardProps {
   /** The system-proposed events anchored to THIS window (see PlaylistTab's
    *  eventsByEntryKey). Reference-stable when unchanged, for the memo. */
   events: SlotEvent[];
-  onConfirm: (ev: SlotEvent) => void;
   /** Open the event's own page. */
   onOpenEvent: (ev: SlotEvent) => void;
   /** Activities OTHERS are planning during this slot's period that aren't on
@@ -134,9 +133,9 @@ function useDiscFit(total: number) {
 }
 
 /** One proposed event: a tiny two-line card. Tapping the CARD opens the
- *  event's own page (people list, your conditions, Back Out); the right-side
- *  pill is the only in-card action, and only when there's something to do:
- *    - joinable            → blue "Confirm" pill (button),
+ *  event's own page (people list, your conditions, Confirm / Back Out); the
+ *  right-side pill is a pure status indicator — NO in-card Confirm button:
+ *    - joinable            → no pill (tap the card to join on its page),
  *    - confirmed + met     → GREEN card, "You're going!" pill (indicator),
  *    - confirmed + pending → BLUE card, "Pending" pill (indicator),
  *    - locked out ("Full") → GREY card, "Full" pill (indicator) — grey, not
@@ -151,11 +150,9 @@ function useDiscFit(total: number) {
  *  the discs collapsing to "+X" where they'd meet it. */
 function EventCard({
   ev,
-  onConfirm,
   onOpen,
 }: {
   ev: SlotEvent;
-  onConfirm: (ev: SlotEvent) => void;
   onOpen: (ev: SlotEvent) => void;
 }) {
   const going = ev.viewer_confirmed && ev.met;
@@ -231,10 +228,9 @@ function EventCard({
               </span>
             )}
           </div>
-          {/* Only Confirm is a live button (stopPropagation so it doesn't
-              also open the page); the rest are indicators — the card tap
-              handles navigation. (Line 3, when an attached poll started,
-              renders below this row.) */}
+          {/* Pills are pure indicators — the card tap handles navigation,
+              and Confirm lives on the event page. (Line 3, when an attached
+              poll started, renders below this row.) */}
           {going ? (
             <span className="shrink-0 whitespace-nowrap rounded-full bg-green-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white">
               You&apos;re going!
@@ -247,19 +243,7 @@ function EventCard({
             <span className="shrink-0 whitespace-nowrap rounded-full bg-gray-200 px-2.5 py-0.5 text-[11.5px] font-medium text-gray-400 dark:bg-gray-700 dark:text-gray-500">
               Full
             </span>
-          ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onConfirm(ev);
-              }}
-              aria-label={`Confirm ${ev.activity}`}
-              className="shrink-0 whitespace-nowrap rounded-full bg-blue-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white transition active:bg-blue-700"
-            >
-              Confirm
-            </button>
-          )}
+          ) : null}
         </div>
         {/* Line 3 — the gathering's ACTIVE poll (started from an attached
             activity draft): its title + a countdown to the event start (the
@@ -296,7 +280,6 @@ function SlotCardImpl({
   line,
   colors,
   events,
-  onConfirm,
   onOpenEvent,
   suggested,
   onOpenSuggested,
@@ -407,7 +390,7 @@ function SlotCardImpl({
             {events.length === 0 ? (
               <span className="text-sm text-gray-400 dark:text-gray-500">No events yet…</span>
             ) : (
-              events.map((ev) => <EventCard key={`${ev.day}#${ev.activity.toLowerCase()}#${ev.id ?? "fresh"}`} ev={ev} onConfirm={onConfirm} onOpen={onOpenEvent} />)
+              events.map((ev) => <EventCard key={`${ev.day}#${ev.activity.toLowerCase()}#${ev.id ?? "fresh"}`} ev={ev} onOpen={onOpenEvent} />)
             )}
           </div>
         </div>

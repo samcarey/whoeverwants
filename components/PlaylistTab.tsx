@@ -21,7 +21,6 @@ import {
   getCachedSlots,
   apiGetSlotEvents,
   getCachedSlotEvents,
-  apiSetEventConfirmation,
   apiGetActivitySuggestions,
   apiUpdateSlot,
   type ActivitySuggestion,
@@ -176,19 +175,6 @@ export default function PlaylistTab() {
   // two), so just re-pull the whole list either way and let the refreshed
   // flags drive every pill. A 409 "Full" race lands the same way: the refetch
   // shows the Full state.
-  const confirmEvent = useCallback(
-    async (ev: SlotEvent) => {
-      haptic.medium();
-      try {
-        await apiSetEventConfirmation(ev.day, ev.activity, true, ev.id);
-      } catch {
-        // Fall through to the refetch.
-      }
-      await loadEvents();
-    },
-    [loadEvents],
-  );
-
   // Tapping a card opens the event's own page (people list, your conditions,
   // Back Out). Scroll is saved first so back-nav lands where you left.
   const router = useRouter();
@@ -464,7 +450,6 @@ export default function PlaylistTab() {
                 line={e.line}
                 colors={colors}
                 events={eventsByEntryKey.get(e.key) ?? NO_EVENTS}
-                onConfirm={confirmEvent}
                 onOpenEvent={openEvent}
                 suggested={
                   lastEntryKeyBySlot.get(e.slot.id) === e.key

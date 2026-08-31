@@ -21,7 +21,7 @@
  * Closed polls render a "See results ›" header that navigates instead.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import RankableOptions from "@/components/RankableOptions";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import {
@@ -125,6 +125,7 @@ export default function EventPollCard({
     voteId: string;
     yesNo: string | null;
     ranking: string[] | null;
+    tiers: string[][] | null;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,10 +137,14 @@ export default function EventPollCard({
   const isBinary = !isYesNo && options.length === 2;
   const expandable = !isYesNo && options.length > 2 && !pollRef.is_closed;
 
-  // The full drag-ballot's in-progress order (refs — RankableOptions reports
-  // on every drag; re-rendering per drag frame would be wasteful).
-  const rankingRef = useRef<string[]>([]);
-  const tiersRef = useRef<string[][]>([]);
+  // The full drag-ballot's in-progress order. STATE, not a ref: whether the
+  // Submit button shows depends on it (hidden once a submitted vote exists
+  // and the ballot matches it) — RankableOptions reports per drop / tap-move,
+  // not per drag frame, so the re-render is cheap.
+  const [liveRanking, setLiveRanking] = useState<{
+    order: string[];
+    tiers: string[][];
+  } | null>(null);
 
   const loadResults = useCallback(async (qid: string) => {
     try {
@@ -175,6 +180,7 @@ export default function EventPollCard({
             voteId: mine.id,
             yesNo: mine.yes_no_choice,
             ranking: mine.ranked_choices,
+            tiers: mine.ranked_choice_tiers,
           });
         } catch {
           // No own vote / fetch failed — fresh ballot.
@@ -232,7 +238,12 @@ export default function EventPollCard({
         if (v) {
           setStoredVoteId(question.id, v.id);
           setVotedQuestionFlag(question.id, true);
-          setMyVote({ voteId: v.id, yesNo: v.yes_no_choice, ranking: v.ranked_choices });
+          setMyVote({
+            voteId: v.id,
+            yesNo: v.yes_no_choice,
+            ranking: v.ranked_choices,
+            tiers: v.ranked_choice_tiers,
+          });
         }
         void loadResults(question.id);
         setJustSaved(true);
@@ -268,10 +279,10 @@ export default function EventPollCard({
   };
 
   const submitRanking = () => {
-    const order = rankingRef.current;
-    if (order.length === 0) return;
+    if (!liveRanking || liveRanking.order.length === 0) return;
+    const { order } = liveRanking;
     const tiers =
-      tiersRef.current.length > 0 ? tiersRef.current : order.map((o) => [o]);
+      liveRanking.tiers.length > 0 ? liveRanking.tiers : order.map((o) => [o]);
     const fire = () =>
       void submitItems({
         vote_type: "ranked_choice",
@@ -281,6 +292,25 @@ export default function EventPollCard({
     if (!gateOnName(fire)) return;
     fire();
   };
+
+  // Show Submit only while the ballot DIFFERS from what's already submitted:
+  // a first-time voter always sees it; after voting it stays hidden until a
+  // drag/tap changes the order (or tie links), and hides again on save.
+  const ballotDirty = useMemo(() => {
+    if (!liveRanking || liveRanking.order.length === 0) return false;
+    const submitted = myVote?.ranking;
+    if (!submitted || submitted.length === 0) return true;
+    const sameOrder = (a: string[], b: string[]) =>
+      a.length === b.length && a.every((v, i) => v === b[i]);
+    if (!sameOrder(liveRanking.order, submitted)) return true;
+    // Tier (equal-rank link) changes are ballot changes too; null/absent
+    // tiers mean the strict singleton order.
+    const norm = (tiers: string[][] | null, order: string[]) =>
+      tiers && tiers.length > 0 ? tiers : order.map((o) => [o]);
+    const a = norm(liveRanking.tiers, liveRanking.order);
+    const b = norm(myVote?.tiers ?? null, submitted);
+    return a.length !== b.length || a.some((t, i) => !sameOrder(t, b[i]));
+  }, [liveRanking, myVote]);
 
   const icon = question ? getCategoryIcon(question) : "📊";
   const yesNoTotal = (results?.yes_count ?? 0) + (results?.no_count ?? 0);
@@ -391,28 +421,42 @@ export default function EventPollCard({
                 Drag to rank, most preferred first
               </p>
               <RankableOptions
+                // RankableOptions initializes once per mount — re-key it when
+                // the (async-loaded) submitted vote lands so the ballot
+                // re-seeds from it; without this the pre-load shuffle would
+                // read as "different from submitted" and show Update Vote
+                // untouched.
+                key={myVote?.voteId ?? "fresh"}
                 options={options}
-                onRankingChange={(order, tiers) => {
-                  rankingRef.current = order;
-                  tiersRef.current = tiers;
-                }}
+                onRankingChange={(order, tiers) =>
+                  setLiveRanking({ order, tiers })
+                }
                 disabled={submitting}
                 storageKey={`event-poll-ranking-${question.id}`}
                 initialRanking={myVote?.ranking ?? undefined}
+                initialTiers={myVote?.tiers ?? undefined}
                 optionsMetadata={question.options_metadata}
               />
-              <button
-                type="button"
-                onClick={submitRanking}
-                disabled={submitting}
-                className="mt-2.5 w-full rounded-2xl bg-blue-600 py-2 font-medium text-white transition active:bg-blue-700 disabled:opacity-50"
-              >
-                {submitting
-                  ? "Submitting…"
-                  : myVote?.ranking?.length
-                    ? "Update Vote"
-                    : "Submit Vote"}
-              </button>
+              {ballotDirty ? (
+                <button
+                  type="button"
+                  onClick={submitRanking}
+                  disabled={submitting}
+                  className="mt-2.5 w-full rounded-2xl bg-blue-600 py-2 font-medium text-white transition active:bg-blue-700 disabled:opacity-50"
+                >
+                  {submitting
+                    ? "Submitting…"
+                    : myVote?.ranking?.length
+                      ? "Update Vote"
+                      : "Submit Vote"}
+                </button>
+              ) : (
+                myVote?.ranking?.length ? (
+                  <p className="mt-2 text-center text-xs text-gray-400 dark:text-gray-500">
+                    Your vote is in — drag to change it
+                  </p>
+                ) : null
+              )}
             </div>
           </div>
         </div>
