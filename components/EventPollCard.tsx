@@ -43,6 +43,14 @@ import { haptic } from "@/lib/haptics";
 
 const RESULTS_REFRESH_MS = 7000;
 
+const sameOrder = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
+const sameTiers = (a: string[][], b: string[][]) =>
+  a.length === b.length && a.every((t, i) => sameOrder(t, b[i]));
+/** Null/absent tiers mean the strict singleton order. */
+const normTiers = (tiers: string[][] | null, order: string[]) =>
+  tiers && tiers.length > 0 ? tiers : order.map((o) => [o]);
+
 /** Round-1 count for an option (the binary card's tally). */
 function firstRoundCount(results: QuestionResults | null, option: string): number {
   return (
@@ -145,6 +153,17 @@ export default function EventPollCard({
     order: string[];
     tiers: string[][];
   } | null>(null);
+  // STABLE identity + content-equal bail, both load-bearing: RankableOptions
+  // reports from an effect keyed on this callback, so an inline arrow (new
+  // identity per render) + an always-new state object is an infinite
+  // setState loop ("Maximum update depth exceeded").
+  const handleRankingChange = useCallback((order: string[], tiers: string[][]) => {
+    setLiveRanking((prev) =>
+      prev && sameOrder(prev.order, order) && sameTiers(prev.tiers, tiers)
+        ? prev
+        : { order, tiers },
+    );
+  }, []);
 
   const loadResults = useCallback(async (qid: string) => {
     try {
@@ -300,16 +319,12 @@ export default function EventPollCard({
     if (!liveRanking || liveRanking.order.length === 0) return false;
     const submitted = myVote?.ranking;
     if (!submitted || submitted.length === 0) return true;
-    const sameOrder = (a: string[], b: string[]) =>
-      a.length === b.length && a.every((v, i) => v === b[i]);
     if (!sameOrder(liveRanking.order, submitted)) return true;
-    // Tier (equal-rank link) changes are ballot changes too; null/absent
-    // tiers mean the strict singleton order.
-    const norm = (tiers: string[][] | null, order: string[]) =>
-      tiers && tiers.length > 0 ? tiers : order.map((o) => [o]);
-    const a = norm(liveRanking.tiers, liveRanking.order);
-    const b = norm(myVote?.tiers ?? null, submitted);
-    return a.length !== b.length || a.some((t, i) => !sameOrder(t, b[i]));
+    // Tier (equal-rank link) changes are ballot changes too.
+    return !sameTiers(
+      normTiers(liveRanking.tiers, liveRanking.order),
+      normTiers(myVote?.tiers ?? null, submitted),
+    );
   }, [liveRanking, myVote]);
 
   const icon = question ? getCategoryIcon(question) : "📊";
@@ -428,9 +443,7 @@ export default function EventPollCard({
                 // untouched.
                 key={myVote?.voteId ?? "fresh"}
                 options={options}
-                onRankingChange={(order, tiers) =>
-                  setLiveRanking({ order, tiers })
-                }
+                onRankingChange={handleRankingChange}
                 disabled={submitting}
                 storageKey={`event-poll-ranking-${question.id}`}
                 initialRanking={myVote?.ranking ?? undefined}
