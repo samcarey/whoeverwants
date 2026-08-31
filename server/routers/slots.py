@@ -44,6 +44,7 @@ from services.slot_events import (
     NoSuchEventError,
     list_events,
     set_confirmation,
+    set_event_preferences,
     start_due_event_polls,
 )
 from services.slots import (
@@ -330,6 +331,10 @@ class SlotEventResponse(BaseModel):
     needed: int = 0
     # The key's started poll (see SlotEventPollInfo); null when none.
     poll: SlotEventPollInfo | None = None
+    # The viewer's stored preference rank over their same-slot confirmed
+    # events (migration 160): 1 = top choice, equal ranks = LINKED (attending
+    # both regardless of overlap). Null when never ordered / not confirmed.
+    viewer_pref_rank: int | None = None
 
 
 class SlotEventsResponse(BaseModel):
@@ -343,6 +348,14 @@ class EventConfirmationRequest(BaseModel):
     # Which party to join; omitted/null = the fresh card (join the fullest
     # party that will take the caller, else mint a new one).
     event_id: str | None = None
+
+
+class EventPreferencesRequest(BaseModel):
+    day: str
+    # Ordered tiers of party event ids, top preference first (the DnD
+    # interface's output). Several ids in one tier = LINKED — the caller
+    # attends all of them regardless of overlap.
+    tiers: list[list[str]] = []
 
 
 @router.get("/events", response_model=SlotEventsResponse)
@@ -381,6 +394,19 @@ def set_event_confirmation_endpoint(req: EventConfirmationRequest, request: Requ
         except EventFullError:
             raise HTTPException(status_code=409, detail="Full")
     return SlotEventResponse(**payload)
+
+
+@router.post("/events/preferences")
+def set_event_preferences_endpoint(req: EventPreferencesRequest, request: Request):
+    # Store the caller's fallback ordering over their confirmed events of one
+    # day (see set_event_preferences). Ids that aren't the caller's own
+    # confirmations are silently ignored, so no per-id validation here.
+    with get_db() as conn:
+        user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=_browser_id(request))
+        if not user_id:
+            raise HTTPException(status_code=404, detail="Event not found")
+        set_event_preferences(conn, user_id=user_id, day=req.day, tiers=req.tiers)
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------

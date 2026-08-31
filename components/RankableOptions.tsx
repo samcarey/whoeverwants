@@ -17,6 +17,7 @@ import {
   LINK_CIRCLE_SIZE,
   LINK_CONTOUR_FILTER,
   LinkIcon,
+  AmpersandIcon,
   DragHandleVisual,
   TierCardRows,
   LinkCircle,
@@ -64,11 +65,26 @@ function buildInitialRankingState(args: {
   storageKey?: string;
   preserveOrder: boolean;
   totalItemHeight: number;
+  allowExclude: boolean;
 }): InitialRankingState {
-  const { options, initialRanking, initialTiers, newOptions, storageKey, preserveOrder, totalItemHeight } = args;
+  const { options, initialRanking, initialTiers, newOptions, storageKey, preserveOrder, totalItemHeight, allowExclude } = args;
   if (typeof window === 'undefined') {
     return { mainList: [], noPreferenceList: [], linkedPairs: new Set(), initialized: false };
   }
+
+  // With the exclude zone disabled, every option lives in the main list —
+  // fold any would-be no-preference leftovers onto the end of main.
+  const finalize = (
+    main: RankableOption[],
+    noPref: RankableOption[],
+    linked: Set<string>,
+  ): InitialRankingState => {
+    if (!allowExclude && noPref.length > 0) {
+      const merged = [...main, ...noPref].map((o, i) => ({ ...o, top: i * totalItemHeight }));
+      return { mainList: merged, noPreferenceList: [], linkedPairs: linked, initialized: true };
+    }
+    return { mainList: main, noPreferenceList: noPref, linkedPairs: linked, initialized: true };
+  };
 
   if (initialRanking && initialRanking.length > 0) {
     // Edit mode: seed from the provided ranking; leftovers go to
@@ -102,32 +118,30 @@ function buildInitialRankingState(args: {
         }
       }
     }
-    return { mainList: rankedOptions, noPreferenceList: noPreferenceOptions, linkedPairs: linked, initialized: true };
+    return finalize(rankedOptions, noPreferenceOptions, linked);
   }
 
   const savedState = loadSavedRanking(storageKey, options);
   if (savedState) {
-    return {
-      mainList: savedState.mainList.map((item, index) => ({ ...item, top: index * totalItemHeight })),
-      noPreferenceList: savedState.noPreferenceList.map((item, index) => ({ ...item, top: index * totalItemHeight })),
-      linkedPairs: new Set(Array.isArray(savedState.linkedPairs) ? savedState.linkedPairs : []),
-      initialized: true,
-    };
+    return finalize(
+      savedState.mainList.map((item, index) => ({ ...item, top: index * totalItemHeight })),
+      savedState.noPreferenceList.map((item, index) => ({ ...item, top: index * totalItemHeight })),
+      new Set(Array.isArray(savedState.linkedPairs) ? savedState.linkedPairs : []),
+    );
   }
 
   // Fresh ballot: randomized order to prevent position bias, unless
   // preserveOrder (time slots have a natural chronological order).
   const orderedOptions = preserveOrder ? options : shuffleArray(options);
-  return {
-    mainList: orderedOptions.map((text, index) => ({
+  return finalize(
+    orderedOptions.map((text, index) => ({
       id: `option-${index}`,
       text,
       top: index * totalItemHeight,
     })),
-    noPreferenceList: [],
-    linkedPairs: new Set(),
-    initialized: true,
-  };
+    [],
+    new Set(),
+  );
 }
 
 interface RankableOptionsProps {
@@ -149,10 +163,23 @@ interface RankableOptionsProps {
   preserveOrder?: boolean; // Skip initial shuffle (use for time slots, which have a natural order)
   /** Disable the equal-ranking link UI (e.g. for time slot questions) */
   disableGrouping?: boolean;
+  /**
+   * When false, the "No Preference" exclude zone is gone entirely: no divider,
+   * no second list, and every option always stays in the (ranked) main list.
+   * Used by surfaces that are ordering a FIXED set (the event-preference
+   * modal) rather than voting on an excludable ballot. Default true.
+   */
+  allowExclude?: boolean;
+  /**
+   * Glyph for the link-toggle circles between adjacent items. 'chain' (the
+   * default) reads as "tied rank"; 'ampersand' reads as "both happen" — the
+   * event-preference modal's linked-events-are-both-confirmed semantics.
+   */
+  linkGlyph?: 'chain' | 'ampersand';
 }
 
 
-export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, initialTiers, optionsMetadata, renderOption, preserveOrder = false, disableGrouping = false, newOptions }: RankableOptionsProps) {
+export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, initialTiers, optionsMetadata, renderOption, preserveOrder = false, disableGrouping = false, allowExclude = true, linkGlyph = 'chain', newOptions }: RankableOptionsProps) {
 
   // Bind props/options to the pure helpers in rankable/storage.ts so
   // downstream useCallback deps see a stable identity for these.
@@ -182,8 +209,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   // Seeded synchronously (lazy initializer, runs once per mount) so the first
   // commit paints the full list — see buildInitialRankingState.
   const [initialState] = useState<InitialRankingState>(() =>
-    buildInitialRankingState({ options, initialRanking, initialTiers, newOptions, storageKey, preserveOrder, totalItemHeight }),
+    buildInitialRankingState({ options, initialRanking, initialTiers, newOptions, storageKey, preserveOrder, totalItemHeight, allowExclude }),
   );
+  // The glyph shown in every link circle (and the drag preview's internal
+  // links) — see the linkGlyph prop.
+  const linkGlyphNode = linkGlyph === 'ampersand' ? <AmpersandIcon /> : <LinkIcon />;
   const [mainList, setMainList] = useState<RankableOption[]>(initialState.mainList);
   const [noPreferenceList, setNoPreferenceList] = useState<RankableOption[]>(initialState.noPreferenceList);
   // Linked pairs for equal/tied ranking. Keys are canonical pairKey(id1, id2)
@@ -820,8 +850,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           top: index * totalItemHeight
         }));
 
-        setMainList(rankedOptions);
-        setNoPreferenceList(noPreferenceOptions);
+        if (allowExclude) {
+          setMainList(rankedOptions);
+          setNoPreferenceList(noPreferenceOptions);
+        } else {
+          // No exclude zone: leftovers append to the ranked list instead.
+          setMainList(
+            [...rankedOptions, ...noPreferenceOptions].map((o, i) => ({ ...o, top: i * totalItemHeight })),
+          );
+          setNoPreferenceList([]);
+        }
 
         // If tiers were passed in (edit mode with existing tied rankings),
         // convert them to linkedPairs state. Tiers reference option texts,
@@ -857,8 +895,15 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             top: index * totalItemHeight
           }));
 
-          setMainList(positionedMainList);
-          setNoPreferenceList(positionedNoPreferenceList);
+          if (allowExclude) {
+            setMainList(positionedMainList);
+            setNoPreferenceList(positionedNoPreferenceList);
+          } else {
+            setMainList(
+              [...positionedMainList, ...positionedNoPreferenceList].map((o, i) => ({ ...o, top: i * totalItemHeight })),
+            );
+            setNoPreferenceList([]);
+          }
           // Restore linked pairs if the saved state has them (older saved
           // states just don't have the field — default to empty).
           setLinkedPairs(
@@ -882,7 +927,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       previousOptionsRef.current = options;
       previousInitialRankingRef.current = initialRanking;
     }
-  }, [options, initialRanking, initialTiers, totalItemHeight, loadSavedState, shuffleArray, preserveOrder]);
+  }, [options, initialRanking, initialTiers, totalItemHeight, loadSavedState, shuffleArray, preserveOrder, allowExclude]);
 
   // Save state whenever lists or linked pairs change
   useEffect(() => {
@@ -1029,7 +1074,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 transform: 'translateX(-50%)', filter: LINK_CONTOUR_FILTER,
               }}
             >
-              <LinkIcon />
+              {linkGlyphNode}
             </div>
           );
         })}
@@ -1205,7 +1250,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
       case 'ArrowRight':
         e.preventDefault();
-        if (keyboardMode && focusedItemId === id) {
+        if (keyboardMode && focusedItemId === id && allowExclude) {
           // Move from main to no preference
           const mainIndex = mainList.findIndex(item => item.id === id);
           if (mainIndex !== -1) {
@@ -1536,6 +1581,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     entry={entry}
                     disabled={disabled}
                     onToggle={toggleLinkBetween}
+                    glyph={linkGlyphNode}
                   />
                 ));
             })()}
@@ -1690,7 +1736,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                               const lastIdx = tierIndices[tierIndices.length - 1];
                               if (lastIdx < listItems.length - 1) {
                                 moveTierByOneUnit(tierIndices[0], size, 'down');
-                              } else {
+                              } else if (allowExclude) {
                                 moveTierBetweenLists('main', tierIndices[0], size, 'noPreference', noPreferenceList.length);
                               }
                             }
@@ -1724,21 +1770,27 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         ''
       )}
       
-      {/* Divider with "No Preference" text */}
-      <div className="my-4 select-none">
-        <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
-        <div className="flex justify-center mt-2">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            No Preference
-          </span>
-        </div>
-      </div>
-      
-      {/* No preference list */}
-      {renderListContainer(
-        noPreferenceList,
-        noPreferenceContainerRef,
-        'noPreference'
+      {/* Divider + "No Preference" exclude zone — omitted entirely when the
+          surface orders a fixed set (allowExclude false). With the container
+          unmounted, noPreferenceContainerRef stays null so getDropTarget
+          never returns 'noPreference' — no drop path needs its own gate. */}
+      {allowExclude && (
+        <>
+          <div className="my-4 select-none">
+            <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
+            <div className="flex justify-center mt-2">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                No Preference
+              </span>
+            </div>
+          </div>
+
+          {renderListContainer(
+            noPreferenceList,
+            noPreferenceContainerRef,
+            'noPreference'
+          )}
+        </>
       )}
       
 

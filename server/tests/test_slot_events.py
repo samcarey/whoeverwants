@@ -697,3 +697,78 @@ def test_deleting_the_slot_drops_the_confirmation_from_the_math(client):
     assert r.status_code == 204
     ev = _events(client, browser_id=b)[0] if _events(client, browser_id=b) else None
     assert ev is None or ev["confirmed_count"] == 1
+
+
+def test_event_preferences_round_trip(client):
+    """Confirming two events on one day, then POSTing /events/preferences,
+    stores the fallback order (tier index = rank, top first) and the events
+    list echoes it back as viewer_pref_rank — for THIS viewer only."""
+    day = _day(41)
+    act_a = _act("Climbing")
+    act_b = _act("Karaoke")
+    b1, b2 = str(uuid.uuid4()), str(uuid.uuid4())
+    _sign_in(client, b1, "Pria")
+    _sign_in(client, b2, "Quinn")
+    _create_slot(client, browser_id=b1, day_time_windows=_dtw(day), activities=[act_a, act_b])
+    _create_slot(client, browser_id=b2, day_time_windows=_dtw(day), activities=[act_a, act_b])
+    for act in (act_a, act_b):
+        assert _confirm(client, browser_id=b1, day=day, activity=act).status_code == 200
+        assert _confirm(client, browser_id=b2, day=day, activity=act).status_code == 200
+
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    assert mine[act_a.lower()]["viewer_pref_rank"] is None  # never ordered yet
+    ids = {k: e["id"] for k, e in mine.items()}
+
+    # B first, A as the backup.
+    r = client.post(
+        "/api/slots/events/preferences",
+        json={"day": day, "tiers": [[ids[act_b.lower()]], [ids[act_a.lower()]]]},
+        headers=bid_headers(b1),
+    )
+    assert r.status_code == 200, r.text
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    assert mine[act_b.lower()]["viewer_pref_rank"] == 1
+    assert mine[act_a.lower()]["viewer_pref_rank"] == 2
+
+    # Per-viewer: the other member's cards carry no rank.
+    others = {e["activity"].lower(): e for e in _events(client, browser_id=b2) if e["viewer_confirmed"]}
+    assert others[act_a.lower()]["viewer_pref_rank"] is None
+    assert others[act_b.lower()]["viewer_pref_rank"] is None
+
+
+def test_event_preferences_linked_tier_and_garbage_ids(client):
+    """One tier holding both events = LINKED (equal rank — attending both
+    regardless of overlap). Malformed / foreign ids are silently ignored."""
+    day = _day(42)
+    act_a = _act("Trivia")
+    act_b = _act("Painting")
+    b1 = str(uuid.uuid4())
+    _sign_in(client, b1, "Rae")
+    _create_slot(client, browser_id=b1, day_time_windows=_dtw(day), activities=[act_a, act_b])
+    for act in (act_a, act_b):
+        assert _confirm(client, browser_id=b1, day=day, activity=act).status_code == 200
+
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    ids = {k: e["id"] for k, e in mine.items()}
+
+    r = client.post(
+        "/api/slots/events/preferences",
+        json={"day": day, "tiers": [[ids[act_a.lower()], ids[act_b.lower()]]]},
+        headers=bid_headers(b1),
+    )
+    assert r.status_code == 200, r.text
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    assert mine[act_a.lower()]["viewer_pref_rank"] == 1
+    assert mine[act_b.lower()]["viewer_pref_rank"] == 1
+
+    # Garbage tiers touch nothing: not-a-uuid + an unknown uuid leave the
+    # stored linked ranks exactly as they were.
+    r = client.post(
+        "/api/slots/events/preferences",
+        json={"day": day, "tiers": [["not-a-uuid"], [str(uuid.uuid4())]]},
+        headers=bid_headers(b1),
+    )
+    assert r.status_code == 200, r.text
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    assert mine[act_a.lower()]["viewer_pref_rank"] == 1
+    assert mine[act_b.lower()]["viewer_pref_rank"] == 1

@@ -20,6 +20,7 @@ import type { Slot } from "@/lib/api/slots";
 import {
   timeToMinutes,
   windowDurationMinutes,
+  windowsOverlap,
   formatDayLabel,
   formatLocalDateISO,
   getRelativeDayLabel,
@@ -393,6 +394,26 @@ export function slotWindowEntries(slots: Slot[]): SlotWindowEntry[] {
     (a, b) =>
       a.startAbs - b.startAbs ||
       (a.slot.created_at ?? "").localeCompare(b.slot.created_at ?? ""),
+  );
+}
+
+/** The slot ROW a proposed event attaches to: the first of its day's entries
+ *  whose window overlaps the event's current common window, falling back to
+ *  the day's first row. THE single source of the event→row rule — PlaylistTab
+ *  renders events under the row this picks, and the event page uses the same
+ *  rule to find which OTHER confirmed events share the new one's slot (the
+ *  "order your preferences" trigger). Keep both on this helper so they can't
+ *  drift. */
+export function slotRowEntryForEvent(
+  ev: { day: string; window: { min: string; max: string } | null },
+  entries: SlotWindowEntry[],
+): SlotWindowEntry | null {
+  const dayEntries = entries.filter((e) => e.day === ev.day);
+  if (dayEntries.length === 0) return null;
+  return (
+    (ev.window
+      ? dayEntries.find((e) => windowsOverlap(e.window, ev.window!))
+      : undefined) ?? dayEntries[0]
   );
 }
 

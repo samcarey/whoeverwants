@@ -555,6 +555,55 @@ def _load_confirmations(conn, days: list[str]) -> dict[tuple[str, str], dict[str
     return out
 
 
+def _load_pref_ranks(conn, user_id: str, days: list[str]) -> dict[str, int]:
+    """event_id → the viewer's stored preference rank (migration 160). Lower =
+    more preferred; EQUAL ranks mean the viewer LINKED those events (attending
+    both regardless of overlap). Only the viewer's own confirmations carry a
+    rank, so this is a per-viewer read."""
+    if not days:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT c.event_id, c.pref_rank
+          FROM slot_event_confirmations c
+          JOIN slot_events e ON e.id = c.event_id
+         WHERE c.user_id = %(u)s::uuid
+           AND c.pref_rank IS NOT NULL
+           AND e.day = ANY(%(days)s::date[])
+        """,
+        {"u": user_id, "days": days},
+    ).fetchall()
+    return {str(r["event_id"]): r["pref_rank"] for r in rows}
+
+
+def set_event_preferences(conn, *, user_id: str, day: str, tiers: list[list[str]]) -> None:
+    """Store the caller's preference ORDER over their confirmed events of one
+    day. `tiers` is the drag-to-rank interface's output: tier index = rank
+    (1-based, top tier first), and several event ids sharing a tier are
+    LINKED — the caller means to attend all of them regardless of overlap.
+    Only rows that are actually the caller's confirmations on that day are
+    touched; unknown/foreign/malformed ids are silently ignored (the modal's
+    list can race a cancel)."""
+    from services.groups import _is_uuid_like
+
+    for rank, tier in enumerate(tiers, start=1):
+        ids = [t for t in tier if isinstance(t, str) and _is_uuid_like(t)]
+        if not ids:
+            continue
+        conn.execute(
+            """
+            UPDATE slot_event_confirmations c
+               SET pref_rank = %(r)s
+              FROM slot_events e
+             WHERE e.id = c.event_id
+               AND c.user_id = %(u)s::uuid
+               AND c.event_id = ANY(%(ids)s::uuid[])
+               AND e.day = %(d)s::date
+            """,
+            {"r": rank, "u": user_id, "ids": ids, "d": day},
+        )
+
+
 def _load_event_polls(conn, days: list[str]) -> dict[tuple[str, str], dict]:
     """(day, activity_key) → the STARTED poll's display info, from the
     slot_event_polls link table (one per key). What the event card's timer
@@ -814,6 +863,13 @@ def list_events(conn, *, user_id: str | None) -> list[dict]:
                 poll_info=polls.get((day, key)),
             )
         )
+    # The viewer's stored preference order (rank; equal = linked) rides on
+    # their own confirmed cards so the FE can pre-seed the ordering modal.
+    ranks = _load_pref_ranks(conn, user_id, days)
+    if ranks:
+        for card in out:
+            if card.get("viewer_confirmed") and card.get("id") in ranks:
+                card["viewer_pref_rank"] = ranks[card["id"]]
     # Chronological across keys BY THE DISPLAYED "@ time" (falling back to the
     # anchor window) so the list order matches what the cards say;
     # _cards_for_key already ordered within a key (own party, joinable,
@@ -907,7 +963,21 @@ def set_confirmation(
                     {"d": day, "a": act},
                 ).fetchone()
                 target = str(row["id"])
-        # One confirmation per key: moving parties drops the old one.
+        # One confirmation per key: moving parties drops the old one. The
+        # stored preference rank (migration 160) rides along — switching
+        # parties of the same (day, activity) is still "the same event" in
+        # the user's fallback ordering.
+        prev_rank_row = conn.execute(
+            """
+            SELECT c.pref_rank
+              FROM slot_event_confirmations c
+              JOIN slot_events e ON e.id = c.event_id
+             WHERE c.user_id = %(u)s::uuid
+               AND e.day = %(d)s::date AND LOWER(e.activity) = %(k)s
+             LIMIT 1
+            """,
+            {"u": user_id, "d": day, "k": key},
+        ).fetchone()
         conn.execute(
             """
             DELETE FROM slot_event_confirmations c
@@ -920,11 +990,11 @@ def set_confirmation(
         )
         conn.execute(
             """
-            INSERT INTO slot_event_confirmations (event_id, user_id)
-            VALUES (%(e)s::uuid, %(u)s::uuid)
+            INSERT INTO slot_event_confirmations (event_id, user_id, pref_rank)
+            VALUES (%(e)s::uuid, %(u)s::uuid, %(p)s)
             ON CONFLICT DO NOTHING
             """,
-            {"e": target, "u": user_id},
+            {"e": target, "u": user_id, "p": prev_rank_row["pref_rank"] if prev_rank_row else None},
         )
     else:
         conn.execute(

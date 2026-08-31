@@ -29,12 +29,13 @@ import {
 } from "@/lib/api/slots";
 import { apiAddActivityBlacklist } from "@/lib/api/users";
 import ModalPortal from "@/components/ModalPortal";
+import EventPreferenceModal from "@/components/EventPreferenceModal";
 import { haptic } from "@/lib/haptics";
-import { windowsOverlap } from "@/lib/timeUtils";
 import {
   buildActivityColorMap,
   sortSlotsChronological,
   slotWindowEntries,
+  slotRowEntryForEvent,
   type SlotWindowEntry,
   edgeToEdgeStyle,
   TIME_COLUMN_BASIS,
@@ -221,11 +222,8 @@ export default function PlaylistTab() {
       // act on yet. They surface as a bubble in the activity's edit sheet
       // instead (see NewSlotSheet), so the timeline stays actionable.
       if ((ev.needed ?? 0) > 0) continue;
-      const dayEntries = entries.filter((e) => e.day === ev.day);
-      if (dayEntries.length === 0) continue;
-      const target = ev.window
-        ? dayEntries.find((e) => windowsOverlap(e.window, ev.window!)) ?? dayEntries[0]
-        : dayEntries[0];
+      const target = slotRowEntryForEvent(ev, entries);
+      if (!target) continue;
       const list = map.get(target.key);
       if (list) list.push(ev);
       else map.set(target.key, [ev]);
@@ -260,6 +258,15 @@ export default function PlaylistTab() {
   const openSuggested = useCallback((slot: Slot) => {
     haptic.light();
     setSuggestSlotId(slot.id);
+  }, []);
+
+  // The preference-order modal (the "Order preferences" button under a slot's
+  // confirmed events). Revisit-only here — the confirm-time intro lives on
+  // the event page.
+  const [prefOrder, setPrefOrder] = useState<{ day: string; events: SlotEvent[] } | null>(null);
+  const openOrderPreferences = useCallback((day: string, confirmed: SlotEvent[]) => {
+    haptic.light();
+    setPrefOrder({ day, events: confirmed });
   }, []);
 
   // The modal's live view of its slot + list (a slots refresh mid-modal
@@ -451,6 +458,7 @@ export default function PlaylistTab() {
                 colors={colors}
                 events={eventsByEntryKey.get(e.key) ?? NO_EVENTS}
                 onOpenEvent={openEvent}
+                onOrderPreferences={openOrderPreferences}
                 suggested={
                   lastEntryKeyBySlot.get(e.slot.id) === e.key
                     ? visibleSuggestedBySlot.get(e.slot.id) ?? NO_SUGGESTIONS
@@ -462,6 +470,17 @@ export default function PlaylistTab() {
           </div>
         </div>
       ))}
+
+      {/* Revisit the fallback ordering over one slot's confirmed events. */}
+      {prefOrder && (
+        <EventPreferenceModal
+          day={prefOrder.day}
+          events={prefOrder.events}
+          showIntro={false}
+          onClose={() => setPrefOrder(null)}
+          onSaved={() => void loadEvents()}
+        />
+      )}
 
       {/* The suggested-activities modal: everything others are planning
           during this slot's period, each with add (+) and silence (✕) —

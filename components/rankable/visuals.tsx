@@ -22,6 +22,21 @@ export function LinkIcon({ size = LINK_ICON_SIZE }: { size?: number }) {
   );
 }
 
+/** Ampersand glyph — the link-circle alternative used where linking means
+ *  "BOTH happen" (the event-preference modal: linked events are both
+ *  confirmed regardless of overlap) rather than "tied rank". */
+export function AmpersandIcon({ size = LINK_ICON_SIZE }: { size?: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="font-bold select-none"
+      style={{ fontSize: `${size + 3}px`, lineHeight: 1 }}
+    >
+      &amp;
+    </span>
+  );
+}
+
 export function GripLines() {
   return (
     <div className="flex flex-col items-center justify-center my-0.5">
@@ -131,11 +146,15 @@ export function LinkCircle({
   disabled,
   onToggle,
   translateY,
+  glyph,
 }: {
   entry: { topCenter: number; linked: boolean; idA: string; idB: string };
   disabled: boolean;
   onToggle: (idA: string, idB: string) => void;
   translateY?: number;
+  /** Override the chain-link glyph (e.g. <AmpersandIcon /> for "both happen"
+   *  semantics). Defaults to the chain link. */
+  glyph?: React.ReactNode;
 }) {
   const { topCenter, linked, idA, idB } = entry;
   return (
@@ -169,7 +188,7 @@ export function LinkCircle({
       aria-label={linked ? 'Break tied ranking' : 'Tie these rankings together'}
       title={linked ? 'Break tied ranking' : 'Tie these rankings together'}
     >
-      <LinkIcon />
+      {glyph ?? <LinkIcon />}
     </button>
   );
 }

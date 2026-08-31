@@ -226,6 +226,10 @@ export interface SlotEvent {
    *  every card of the key. Drives the card's third-line timer and the event
    *  page's Poll section; URL = /g/{group_short_id}/p/{poll_short_id}. */
   poll?: SlotEventPoll | null;
+  /** The viewer's stored preference rank over their same-slot confirmed
+   *  events (migration 160): 1 = top choice, equal ranks = LINKED (attending
+   *  both regardless of overlap). Null/absent when never ordered. */
+  viewer_pref_rank?: number | null;
 }
 
 export interface SlotEventPoll {
@@ -267,6 +271,21 @@ export async function apiSetEventConfirmation(
   return slotFetch<SlotEvent>("/events/confirmation", {
     method: "POST",
     body: JSON.stringify({ day, activity, confirmed, event_id: eventId }),
+  });
+}
+
+/** Store the caller's preference ORDER over their confirmed events of one
+ *  day — the drag-to-rank modal's output. `tiers` is top preference first;
+ *  several event ids in one tier = LINKED (the caller attends all of them
+ *  regardless of overlap). Ranks come back as `viewer_pref_rank` on the
+ *  events list. */
+export async function apiSetEventPreferences(
+  day: string,
+  tiers: string[][],
+): Promise<void> {
+  await slotFetch<{ status: string }>("/events/preferences", {
+    method: "POST",
+    body: JSON.stringify({ day, tiers }),
   });
 }
 

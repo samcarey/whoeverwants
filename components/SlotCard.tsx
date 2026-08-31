@@ -55,6 +55,10 @@ interface SlotCardProps {
   events: SlotEvent[];
   /** Open the event's own page. */
   onOpenEvent: (ev: SlotEvent) => void;
+  /** Open the preference-order modal over this row's CONFIRMED events (the
+   *  "in case the top one doesn't happen" fallback ordering). Only offered
+   *  when ≥2 of this row's events are viewer-confirmed. */
+  onOrderPreferences: (day: string, confirmed: SlotEvent[]) => void;
   /** Activities OTHERS are planning during this slot's period that aren't on
    *  the slot yet (already blacklist-filtered). Non-empty → the "Suggested"
    *  preview card at the bottom of the slot. Reference-stable when unchanged,
@@ -281,9 +285,13 @@ function SlotCardImpl({
   colors,
   events,
   onOpenEvent,
+  onOrderPreferences,
   suggested,
   onOpenSuggested,
 }: SlotCardProps) {
+  // ≥2 confirmed events in ONE slot → the viewer can (re)order them by
+  // preference (rank badges + the button below the stack).
+  const confirmedEvents = events.filter((e) => e.viewer_confirmed);
   // Resolve each activity's color once (stable per activity name across the
   // whole timeline — see buildActivityColorMap).
   const activities = slot.activities.map((a) => ({
@@ -391,6 +399,21 @@ function SlotCardImpl({
               <span className="text-sm text-gray-400 dark:text-gray-500">No events yet…</span>
             ) : (
               events.map((ev) => <EventCard key={`${ev.day}#${ev.activity.toLowerCase()}#${ev.id ?? "fresh"}`} ev={ev} onOpen={onOpenEvent} />)
+            )}
+            {/* Revisit the fallback ordering — only meaningful once this slot
+                holds ≥2 confirmed events (the confirm flow opens the same
+                modal the first time). */}
+            {confirmedEvents.length >= 2 && (
+              <button
+                type="button"
+                onClick={() => onOrderPreferences(confirmedEvents[0].day, confirmedEvents)}
+                className="self-start flex items-center gap-1 px-1 text-[12px] font-medium text-blue-600 dark:text-blue-400 active:opacity-70"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M3 12h12M3 17h6" />
+                </svg>
+                Order preferences
+              </button>
             )}
           </div>
         </div>

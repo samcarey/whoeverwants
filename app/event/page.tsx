@@ -31,6 +31,7 @@ import HeaderPortal from "@/components/HeaderPortal";
 import AccountGateModal from "@/components/AccountGateModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import EventPollCard from "@/components/EventPollCard";
+import EventPreferenceModal from "@/components/EventPreferenceModal";
 import InitialBubble from "@/components/InitialBubble";
 import PollComments, { type CommentsApi } from "@/components/PollComments";
 import { eventStartIso } from "@/components/SlotCard";
@@ -54,6 +55,7 @@ import {
   type SlotEvent,
 } from "@/lib/api/slots";
 import { getRelativeDayLabel } from "@/lib/timeUtils";
+import { slotRowEntryForEvent, slotWindowEntries } from "@/lib/slotUtils";
 
 /** "HH:MM" → "2 PM" / "2:30 PM" (mirrors SlotCard's fmtClock). */
 function fmtClock(hhmm: string): string {
@@ -108,11 +110,14 @@ function EventPageInner() {
     [day, activity],
   );
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<SlotEvent[] | null> => {
     try {
-      setEvents(await apiGetSlotEvents());
+      const next = await apiGetSlotEvents();
+      setEvents(next);
+      return next;
     } catch {
       // Keep the last-known list; the next tick retries.
+      return null;
     }
   }, []);
 
@@ -179,20 +184,50 @@ function EventPageInner() {
     return () => window.removeEventListener(SLOTS_CHANGED_EVENT, onChanged);
   }, [refresh]);
 
+  // Confirming into a slot that already holds another confirmed event opens
+  // the preference modal: the time ranges + whether they overlap, then the
+  // drag-to-order step ("in case the top one doesn't happen"; & = both).
+  const [prefConflict, setPrefConflict] = useState<{ day: string; events: SlotEvent[] } | null>(
+    null,
+  );
+
   const setConfirmed = useCallback(
     async (confirmed: boolean) => {
       if (!ev || busy) return;
       haptic.medium();
       setBusy(true);
+      let ok = true;
       try {
         await apiSetEventConfirmation(ev.day, ev.activity, confirmed, ev.id);
       } catch {
         // The refetch below surfaces the true state (e.g. a Full race).
+        ok = false;
       }
-      await refresh();
+      const fresh = await refresh();
       setBusy(false);
+      if (!confirmed || !ok || !fresh) return;
+      // Did this confirm land in a slot that already holds another confirmed
+      // event? "Same slot" mirrors the playlist's event→row rule
+      // (slotRowEntryForEvent); with no slot rows loaded it degrades to
+      // same-day, which is a superset the intro's overlap verdict explains.
+      const mine = fresh.find(
+        (e) => e.day === day && e.activity.trim().toLowerCase() === key && e.viewer_confirmed,
+      );
+      if (!mine) return;
+      const entries = slotWindowEntries(slots ?? []);
+      const myRowKey = slotRowEntryForEvent(mine, entries)?.key ?? null;
+      const sameSlot = fresh.filter(
+        (e) =>
+          e !== mine &&
+          e.viewer_confirmed &&
+          e.day === mine.day &&
+          (myRowKey === null || slotRowEntryForEvent(e, entries)?.key === myRowKey),
+      );
+      if (sameSlot.length > 0) {
+        setPrefConflict({ day: mine.day, events: [mine, ...sameSlot] });
+      }
     },
-    [ev, busy, refresh],
+    [ev, busy, refresh, day, key, slots],
   );
 
   // Swipe-back → home (mirrors /explore's gesture).
@@ -413,6 +448,18 @@ function EventPageInner() {
         }}
         onCancel={() => setConfirmingBackOut(false)}
       />
+
+      {/* Confirmed into an occupied slot → time ranges + overlap, then the
+          drag-to-order fallback chain. */}
+      {prefConflict && (
+        <EventPreferenceModal
+          day={prefConflict.day}
+          events={prefConflict.events}
+          showIntro
+          onClose={() => setPrefConflict(null)}
+          onSaved={() => void refresh()}
+        />
+      )}
 
       <AccountGateModal
         isOpen={!!pendingNameRetry}
