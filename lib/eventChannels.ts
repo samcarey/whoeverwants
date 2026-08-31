@@ -73,6 +73,11 @@ export interface GroupMembersChangedDetail {
  *  the forgotten account from their local state, since the modal lives at
  *  the layout level and can't reach them via props. */
 export const USER_CONTACT_FORGOTTEN_EVENT = 'userContactForgotten';
+
+/** Fired after a friendship-affecting change made from the layout-level
+ *  profile modal (block/unblock) so mounted friend-driven lists
+ *  (/contacts) can refetch — the modal can't reach them via props. */
+export const FRIENDS_CHANGED_EVENT = 'friendsChanged';
 export interface UserContactForgottenDetail {
   /** The forgotten account's user_id. */
   userId: string;

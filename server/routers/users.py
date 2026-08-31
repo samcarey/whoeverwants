@@ -144,6 +144,7 @@ class UserProfileCardResponse(BaseModel):
     created_at: str
     shared_groups: list[SharedGroupResponse]
     shared_events: list[SharedEventResponse] = []
+    viewer_has_blocked: bool = False
 
 
 class PollCategoryHistoryResponse(BaseModel):
@@ -272,6 +273,7 @@ def get_user_profile_card(user_id: str, request: Request):
         if card.image_updated_at
         else None,
         created_at=card.created_at.isoformat(),
+        viewer_has_blocked=card.viewer_has_blocked,
         shared_events=[
             SharedEventResponse(day=e.day, activity=e.activity, emoji=e.emoji)
             for e in card.shared_events

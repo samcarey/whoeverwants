@@ -38,6 +38,7 @@ class ProfileCard:
     created_at: datetime
     shared_groups: list[SharedGroup]
     shared_events: list[SharedEvent]
+    viewer_has_blocked: bool
 
 
 def get_profile_card(
@@ -126,6 +127,20 @@ def get_profile_card(
             for r in erows
         ]
 
+    viewer_has_blocked = False
+    if caller_user_id and caller_user_id != target_user_id:
+        viewer_has_blocked = (
+            conn.execute(
+                """
+                SELECT 1 FROM user_blocks
+                 WHERE blocker_user_id = %(v)s::uuid
+                   AND blocked_user_id = %(t)s::uuid
+                """,
+                {"v": caller_user_id, "t": target_user_id},
+            ).fetchone()
+            is not None
+        )
+
     return ProfileCard(
         user_id=target_user_id,
         name=urow.get("display_name"),
@@ -133,4 +148,5 @@ def get_profile_card(
         created_at=urow["created_at"],
         shared_groups=shared,
         shared_events=shared_events,
+        viewer_has_blocked=viewer_has_blocked,
     )

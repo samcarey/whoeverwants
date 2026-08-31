@@ -19,7 +19,9 @@ import {
   buildUserImageUrl,
   type UserProfileCard,
 } from "@/lib/api/users";
+import { apiBlockUser, apiUnblockUser } from "@/lib/api/friends";
 import {
+  FRIENDS_CHANGED_EVENT,
   USER_CONTACT_FORGOTTEN_EVENT,
   type UserContactForgottenDetail,
 } from "@/lib/eventChannels";
@@ -47,6 +49,12 @@ export default function UserProfileModal({
   const [confirmingForget, setConfirmingForget] = useState(false);
   const [forgetting, setForgetting] = useState(false);
   const [forgetError, setForgetError] = useState(false);
+  // Block flow — offered for EVERYONE (the modal is the universal person
+  // surface, so this is how you block someone who isn't a friend and never
+  // sent a request). Same swap-in confirmation shape as Forget.
+  const [confirmingBlock, setConfirmingBlock] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [blockError, setBlockError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,11 +82,11 @@ export default function UserProfileModal({
   // Re-registering on toggle is harmless here (plain listener, no body lock).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !confirmingForget) onClose();
+      if (e.key === "Escape" && !confirmingForget && !confirmingBlock) onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, confirmingForget]);
+  }, [onClose, confirmingForget, confirmingBlock]);
 
   const confirmForget = async () => {
     if (forgetting) return;
@@ -102,6 +110,36 @@ export default function UserProfileModal({
     }
   };
 
+  const confirmBlock = async () => {
+    if (blockBusy) return;
+    haptic.medium();
+    setBlockBusy(true);
+    try {
+      await apiBlockUser(userId);
+      window.dispatchEvent(new Event(FRIENDS_CHANGED_EVENT));
+      onClose();
+    } catch {
+      setBlockBusy(false);
+      setConfirmingBlock(false);
+      setBlockError(true);
+    }
+  };
+
+  const unblock = async () => {
+    if (blockBusy) return;
+    setBlockBusy(true);
+    try {
+      await apiUnblockUser(userId);
+      window.dispatchEvent(new Event(FRIENDS_CHANGED_EVENT));
+      const refreshed = await apiGetUserProfileCard(userId).catch(() => null);
+      if (refreshed) setCard(refreshed);
+    } catch {
+      setBlockError(true);
+    } finally {
+      setBlockBusy(false);
+    }
+  };
+
   const displayName = card?.name ?? fallbackName ?? null;
   const imageUrl = card
     ? buildUserImageUrl(card.user_id, card.image_updated_at)
@@ -111,6 +149,21 @@ export default function UserProfileModal({
   // z-[70], below this modal's z-[80], so stacking the two would hide it —
   // swapping (like MemberActionsSheet's close-then-confirm) keeps the z-index
   // conventions intact, and cancel restores the still-mounted profile view.
+  if (confirmingBlock) {
+    return (
+      <ConfirmationModal
+        isOpen={true}
+        onConfirm={confirmBlock}
+        onCancel={() => {
+          if (!blockBusy) setConfirmingBlock(false);
+        }}
+        message={`Block ${displayName ?? "this person"}? They won't be able to send you friend requests, and you'll never be suggested for events together.`}
+        confirmText={blockBusy ? "Blocking…" : "Block"}
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+      />
+    );
+  }
+
   if (confirmingForget) {
     return (
       <ConfirmationModal
@@ -190,6 +243,29 @@ export default function UserProfileModal({
                     </li>
                   ))}
                 </ul>
+              )}
+              {blockError && (
+                <p className="px-1 mt-2 text-xs text-red-600 dark:text-red-400" role="status">
+                  Couldn&apos;t update the block. Try again.
+                </p>
+              )}
+              {card.viewer_has_blocked ? (
+                <button
+                  type="button"
+                  onClick={() => void unblock()}
+                  disabled={blockBusy}
+                  className="mt-3 w-full py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {blockBusy ? "Unblocking…" : "Blocked — tap to unblock"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingBlock(true)}
+                  className="mt-3 w-full py-2.5 rounded-xl border border-red-300 dark:border-red-500/60 text-red-600 dark:text-red-400 text-sm font-medium transition-all active:scale-95"
+                >
+                  Block
+                </button>
               )}
               {card.shared_groups.length === 0 && (
                 <>

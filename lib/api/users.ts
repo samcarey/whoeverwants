@@ -173,6 +173,8 @@ export interface UserProfileCard {
   shared_groups: SharedGroupSummary[];
   /** Events both people were confirmed into, most recent first. */
   shared_events: SharedEventSummary[];
+  /** Whether the CALLER has blocked this person (drives Block vs Unblock). */
+  viewer_has_blocked: boolean;
 }
 
 /** Fetch another user's profile card. Throws ApiError(404) when missing. */
@@ -193,6 +195,7 @@ export async function apiGetUserProfileCard(
             name: (g.name ?? null) as string | null,
           }))
       : [],
+    viewer_has_blocked: !!data.viewer_has_blocked,
     shared_events: Array.isArray(data.shared_events)
       ? data.shared_events
           .filter((e: any) => e && typeof e.day === 'string' && typeof e.activity === 'string')

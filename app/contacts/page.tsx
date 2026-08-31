@@ -34,6 +34,7 @@ import {
 } from "@/lib/api/friends";
 import { buildUserImageUrl } from "@/lib/api/users";
 import {
+  FRIENDS_CHANGED_EVENT,
   SHOW_HOME_BACKDROP_EVENT,
   HIDE_HOME_BACKDROP_EVENT,
 } from "@/lib/eventChannels";
@@ -160,12 +161,16 @@ export default function ContactsPage() {
   useEffect(() => {
     const refetch = () => void refresh();
     window.addEventListener(SESSION_CHANGED_EVENT, refetch);
+    // Blocking/unblocking from the layout-level profile modal must reflect
+    // here (rows move between Friends/Suggestions and Blocked).
+    window.addEventListener(FRIENDS_CHANGED_EVENT, refetch);
     const onVisible = () => {
       if (document.visibilityState === "visible") void refresh();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.removeEventListener(SESSION_CHANGED_EVENT, refetch);
+      window.removeEventListener(FRIENDS_CHANGED_EVENT, refetch);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refresh]);
