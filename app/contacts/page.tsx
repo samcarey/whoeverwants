@@ -534,18 +534,41 @@ export default function ContactsPage() {
                 <div className="space-y-3">
                   {newGroupOpen && (
                     <div className={`${CARD_CLASS} flex items-center gap-2 py-2.5`}>
-                      <input
-                        type="text"
-                        value={newGroupName}
-                        onChange={(e) => setNewGroupName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") createGroup();
-                        }}
-                        placeholder="Group name"
-                        maxLength={50}
-                        autoFocus
-                        className="flex-1 min-w-0 h-9 px-3 rounded-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                      <div className="relative flex-1 min-w-0">
+                        <input
+                          type="text"
+                          value={newGroupName}
+                          onChange={(e) => setNewGroupName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") createGroup();
+                            else if (e.key === "Escape") {
+                              setNewGroupOpen(false);
+                              setNewGroupName("");
+                            }
+                          }}
+                          placeholder="Group name"
+                          maxLength={50}
+                          autoFocus
+                          className="w-full h-9 pl-3 pr-8 rounded-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          // Cancel: close the input card and drop the typed name.
+                          // mousedown-preventDefault so the tap doesn't blur-flash
+                          // the focused input before the click lands.
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setNewGroupOpen(false);
+                            setNewGroupName("");
+                          }}
+                          aria-label="Cancel new group"
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={createGroup}
