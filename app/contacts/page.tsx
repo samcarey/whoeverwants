@@ -317,7 +317,9 @@ export default function ContactsPage() {
     };
     const forbidden = new Set([groupId]);
     for (const g of groups) {
-      if (g.id !== groupId && reaches(groupId, g.id, new Set())) forbidden.add(g.id);
+      // Adding X under G cycles exactly when X already reaches G — i.e. X
+      // is an ANCESTOR of G. (Descendants are fine: a diamond is a DAG.)
+      if (g.id !== groupId && reaches(g.id, groupId, new Set())) forbidden.add(g.id);
     }
     return forbidden;
   };
