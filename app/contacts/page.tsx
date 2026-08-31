@@ -531,9 +531,9 @@ export default function ContactsPage() {
                     </svg>
                   </button>
                 </div>
-                <div className={CARD_CLASS}>
+                <div className="space-y-3">
                   {newGroupOpen && (
-                    <div className="flex items-center gap-2 py-2.5">
+                    <div className={`${CARD_CLASS} flex items-center gap-2 py-2.5`}>
                       <input
                         type="text"
                         value={newGroupName}
@@ -557,15 +557,17 @@ export default function ContactsPage() {
                     </div>
                   )}
                   {overview.groups.length === 0 && !newGroupOpen && (
-                    <p className="py-4 text-sm text-gray-500 dark:text-gray-400">
-                      Group your friends (&quot;Climbing crew&quot;, &quot;Family&quot;) to pick them
-                      all at once in an activity&apos;s With field. Only you see your groups.
-                    </p>
+                    <div className={CARD_CLASS}>
+                      <p className="py-4 text-sm text-gray-500 dark:text-gray-400">
+                        Group your friends (&quot;Climbing crew&quot;, &quot;Family&quot;) to pick them
+                        all at once in an activity&apos;s With field. Only you see your groups.
+                      </p>
+                    </div>
                   )}
                   {overview.groups.map((group) => {
                     const expanded = expandedGroupId === group.id;
                     return (
-                      <div key={group.id} className="py-1">
+                      <div key={group.id} className={`${CARD_CLASS} py-1`}>
                         <button
                           type="button"
                           onClick={() => setExpandedGroupId(expanded ? null : group.id)}
