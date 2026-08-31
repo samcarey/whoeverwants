@@ -123,16 +123,27 @@ class SharedGroupResponse(BaseModel):
     name: str | None = None
 
 
+class SharedEventResponse(BaseModel):
+    """One event both people were confirmed into (it actually gathered)."""
+
+    day: str
+    activity: str
+    emoji: str | None = None
+
+
 class UserProfileCardResponse(BaseModel):
     """`GET /api/users/{user_id}/profile-card` — the long-press profile modal
     data. `name`/`image_updated_at`/`created_at` are account-level;
-    `shared_groups` is computed per-caller (groups BOTH belong to)."""
+    `shared_groups` (kept for the Forget gate) and `shared_events` (the
+    displayed "events together" history, most recent first) are computed
+    per-caller."""
 
     user_id: str
     name: str | None = None
     image_updated_at: str | None = None
     created_at: str
     shared_groups: list[SharedGroupResponse]
+    shared_events: list[SharedEventResponse] = []
 
 
 class PollCategoryHistoryResponse(BaseModel):
@@ -261,6 +272,10 @@ def get_user_profile_card(user_id: str, request: Request):
         if card.image_updated_at
         else None,
         created_at=card.created_at.isoformat(),
+        shared_events=[
+            SharedEventResponse(day=e.day, activity=e.activity, emoji=e.emoji)
+            for e in card.shared_events
+        ],
         shared_groups=[
             SharedGroupResponse(route_id=g.route_id, name=g.name)
             for g in card.shared_groups

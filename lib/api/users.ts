@@ -156,13 +156,23 @@ export interface SharedGroupSummary {
 }
 
 /** The long-press profile modal payload for another user. */
+export interface SharedEventSummary {
+  /** YYYY-MM-DD */
+  day: string;
+  activity: string;
+  emoji: string | null;
+}
+
 export interface UserProfileCard {
   user_id: string;
   name: string | null;
   image_updated_at: string | null;
   /** ISO timestamp the account was created — drives the "joined X ago" age. */
   created_at: string;
+  /** Kept for the Forget gate only — the modal renders shared_events now. */
   shared_groups: SharedGroupSummary[];
+  /** Events both people were confirmed into, most recent first. */
+  shared_events: SharedEventSummary[];
 }
 
 /** Fetch another user's profile card. Throws ApiError(404) when missing. */
@@ -181,6 +191,15 @@ export async function apiGetUserProfileCard(
           .map((g: any) => ({
             routeId: g.route_id as string,
             name: (g.name ?? null) as string | null,
+          }))
+      : [],
+    shared_events: Array.isArray(data.shared_events)
+      ? data.shared_events
+          .filter((e: any) => e && typeof e.day === 'string' && typeof e.activity === 'string')
+          .map((e: any) => ({
+            day: e.day as string,
+            activity: e.activity as string,
+            emoji: (e.emoji ?? null) as string | null,
           }))
       : [],
   };

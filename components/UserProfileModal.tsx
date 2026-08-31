@@ -2,13 +2,13 @@
 
 /**
  * The long-press → user profile modal. Shows another user's name, a larger
- * avatar, their account age, and the groups the caller shares with them.
- * Opened via `openUserProfileCard(userId)`; mounted once by
- * <UserProfileModalHost> in the root layout.
+ * avatar, their account age, and the EVENTS the caller and this person were
+ * both confirmed into (they actually gathered), most recent first. Opened
+ * via `openUserProfileCard(userId)`; mounted once by <UserProfileModalHost>
+ * in the root layout.
  */
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import InitialBubble from "@/components/InitialBubble";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -25,6 +25,7 @@ import {
 } from "@/lib/eventChannels";
 import { haptic } from "@/lib/haptics";
 import { relativeTime } from "@/lib/questionListUtils";
+import { formatDayLabel } from "@/lib/timeUtils";
 
 interface UserProfileModalProps {
   userId: string;
@@ -38,7 +39,6 @@ export default function UserProfileModal({
   fallbackName,
   onClose,
 }: UserProfileModalProps) {
-  const router = useRouter();
   const [card, setCard] = useState<UserProfileCard | null>(null);
   const [error, setError] = useState(false);
   // Forget-contact flow (only offered when no groups are shared — without a
@@ -107,11 +107,6 @@ export default function UserProfileModal({
     ? buildUserImageUrl(card.user_id, card.image_updated_at)
     : null;
 
-  const goToGroup = (routeId: string) => {
-    onClose();
-    router.push(`/g/${routeId}`);
-  };
-
   // While confirming, render ONLY the confirmation: ConfirmationModal sits at
   // z-[70], below this modal's z-[80], so stacking the two would hide it —
   // swapping (like MemberActionsSheet's close-then-confirm) keeps the z-index
@@ -166,17 +161,38 @@ export default function UserProfileModal({
             </p>
           ) : (
             <div className="mt-5">
+              {/* Events BOTH people were confirmed into (they actually
+                  gathered), most recent first — replaced the shared-groups
+                  list (shared_groups still gates the Forget button). */}
               <h3 className="px-1 mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                {card.shared_groups.length}{" "}
-                {card.shared_groups.length === 1
-                  ? "Shared group"
-                  : "Shared groups"}
+                Events together
               </h3>
-              {card.shared_groups.length === 0 ? (
+              {card.shared_events.length === 0 ? (
+                <p className="px-1 text-sm text-gray-500 dark:text-gray-400">
+                  No events together yet.
+                </p>
+              ) : (
+                <ul className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
+                  {card.shared_events.map((e) => (
+                    <li
+                      key={`${e.day}#${e.activity}`}
+                      className="flex items-center gap-2 px-4 py-3 text-sm"
+                    >
+                      <span className="shrink-0" aria-hidden="true">
+                        {e.emoji ?? "📅"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-gray-900 dark:text-white">
+                        {e.activity}
+                      </span>
+                      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                        {formatDayLabel(e.day)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {card.shared_groups.length === 0 && (
                 <>
-                  <p className="px-1 text-sm text-gray-500 dark:text-gray-400">
-                    No groups in common.
-                  </p>
                   {forgetError && (
                     <p
                       className="px-1 mt-2 text-xs text-red-600 dark:text-red-400"
@@ -193,35 +209,6 @@ export default function UserProfileModal({
                     Forget
                   </button>
                 </>
-              ) : (
-                <ul className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
-                  {card.shared_groups.map((g) => (
-                    <li key={g.routeId}>
-                      <button
-                        type="button"
-                        onClick={() => goToGroup(g.routeId)}
-                        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm text-gray-900 dark:text-white active:bg-gray-100 dark:active:bg-gray-700/50"
-                      >
-                        <span className="min-w-0 truncate">
-                          {g.name ?? "Group"}
-                        </span>
-                        <svg
-                          className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          strokeWidth={2}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M9 5l7 7-7 7"
-                          />
-                        </svg>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
               )}
             </div>
           )}

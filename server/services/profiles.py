@@ -24,12 +24,20 @@ class SharedGroup:
 
 
 @dataclass
+class SharedEvent:
+    day: str
+    activity: str
+    emoji: str | None
+
+
+@dataclass
 class ProfileCard:
     user_id: str
     name: str | None
     image_updated_at: datetime | None
     created_at: datetime
     shared_groups: list[SharedGroup]
+    shared_events: list[SharedEvent]
 
 
 def get_profile_card(
@@ -86,10 +94,43 @@ def get_profile_card(
             name = group_display_name(conn, g["id"], override=g.get("title"))
             shared.append(SharedGroup(route_id=route_id, name=name))
 
+    # Events BOTH people were confirmed into (the same party) — "we actually
+    # did this together", most recent first. Confirmation rows outlive the
+    # slots themselves (slots are purged once past), so history persists;
+    # the emoji is best-effort from either person's surviving tagging rows.
+    shared_events: list[SharedEvent] = []
+    if caller_user_id and caller_user_id != target_user_id:
+        erows = conn.execute(
+            """
+            SELECT e.day::text AS day, e.activity,
+                   (SELECT sa.emoji
+                      FROM slot_activities sa
+                      JOIN slots s ON s.id = sa.slot_id
+                     WHERE s.user_id IN (%(a)s::uuid, %(b)s::uuid)
+                       AND LOWER(sa.activity) = LOWER(e.activity)
+                       AND sa.emoji IS NOT NULL
+                     ORDER BY sa.created_at DESC
+                     LIMIT 1) AS emoji
+              FROM slot_events e
+              JOIN slot_event_confirmations ca
+                ON ca.event_id = e.id AND ca.user_id = %(a)s::uuid
+              JOIN slot_event_confirmations cb
+                ON cb.event_id = e.id AND cb.user_id = %(b)s::uuid
+             ORDER BY e.day DESC, e.activity ASC
+             LIMIT 20
+            """,
+            {"a": caller_user_id, "b": target_user_id},
+        ).fetchall()
+        shared_events = [
+            SharedEvent(day=r["day"], activity=r["activity"], emoji=r.get("emoji"))
+            for r in erows
+        ]
+
     return ProfileCard(
         user_id=target_user_id,
         name=urow.get("display_name"),
         image_updated_at=image_updated_at,
         created_at=urow["created_at"],
         shared_groups=shared,
+        shared_events=shared_events,
     )
