@@ -249,43 +249,44 @@ export default function UserProfileModal({
                   Couldn&apos;t update the block. Try again.
                 </p>
               )}
-              {card.viewer_has_blocked ? (
-                <button
-                  type="button"
-                  onClick={() => void unblock()}
-                  disabled={blockBusy}
-                  className="mt-3 w-full py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium transition-all active:scale-95 disabled:opacity-50"
+              {forgetError && (
+                <p
+                  className="px-1 mt-2 text-xs text-red-600 dark:text-red-400"
+                  role="status"
                 >
-                  {blockBusy ? "Unblocking…" : "Blocked — tap to unblock"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmingBlock(true)}
-                  className="mt-3 w-full py-2.5 rounded-xl border border-red-300 dark:border-red-500/60 text-red-600 dark:text-red-400 text-sm font-medium transition-all active:scale-95"
-                >
-                  Block
-                </button>
+                  Couldn&apos;t forget this person. Try again.
+                </p>
               )}
-              {card.shared_groups.length === 0 && (
-                <>
-                  {forgetError && (
-                    <p
-                      className="px-1 mt-2 text-xs text-red-600 dark:text-red-400"
-                      role="status"
-                    >
-                      Couldn&apos;t forget this person. Try again.
-                    </p>
-                  )}
+              {/* Block + Forget share one row; each stretches when alone. */}
+              <div className="mt-3 flex gap-2">
+                {card.viewer_has_blocked ? (
+                  <button
+                    type="button"
+                    onClick={() => void unblock()}
+                    disabled={blockBusy}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {blockBusy ? "Unblocking…" : "Blocked — unblock"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingBlock(true)}
+                    className="flex-1 py-2.5 rounded-xl border border-red-300 dark:border-red-500/60 text-red-600 dark:text-red-400 text-sm font-medium transition-all active:scale-95"
+                  >
+                    Block
+                  </button>
+                )}
+                {card.shared_groups.length === 0 && (
                   <button
                     type="button"
                     onClick={() => setConfirmingForget(true)}
-                    className="mt-3 w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-all active:scale-95"
+                    className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-all active:scale-95"
                   >
                     Forget
                   </button>
-                </>
-              )}
+                )}
+              </div>
             </div>
           )}
         </div>
