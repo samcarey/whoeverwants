@@ -118,51 +118,51 @@ def test_intersect_interval_lists():
 
 def test_set_ok_max_and_exclude_and_include():
     a, b, c = _cand("a"), _cand("b"), _cand("c")
-    assert _set_ok([a, b, c], {}, require_min=False)
+    assert _set_ok([a, b, c], {}, {}, require_min=False)
     # a caps the party at 2 → the trio fails, the pair passes.
     a.max_people = 2
-    assert not _set_ok([a, b, c], {}, require_min=False)
-    assert _set_ok([a, b], {}, require_min=False)
+    assert not _set_ok([a, b, c], {}, {}, require_min=False)
+    assert _set_ok([a, b], {}, {}, require_min=False)
     # a excludes c outright.
     a.max_people = None
     a.exclude_people = {"c"}
-    assert not _set_ok([a, c], {}, require_min=False)
+    assert not _set_ok([a, c], {}, {}, require_min=False)
     # a's include set claims only b → c fails, b passes.
     a.exclude_people = set()
     a.include_people = {"b"}
-    assert _set_ok([a, b], {}, require_min=False)
-    assert not _set_ok([a, c], {}, require_min=False)
+    assert _set_ok([a, b], {}, {}, require_min=False)
+    assert not _set_ok([a, c], {}, {}, require_min=False)
     # include via group membership.
     a.include_people = set()
     a.include_groups = {"g1"}
-    assert _set_ok([a, c], {"g1": {"c"}}, require_min=False)
-    assert not _set_ok([a, c], {"g1": {"b"}}, require_min=False)
+    assert _set_ok([a, c], {"g1": {"c"}}, {}, require_min=False)
+    assert not _set_ok([a, c], {"g1": {"b"}}, {}, require_min=False)
 
 
 def test_set_ok_minimum_only_when_required():
     a, b = _cand("a", min_people=3), _cand("b")
     # Growing set: minimums exempt. Final set: minimums enforced.
-    assert _set_ok([a, b], {}, require_min=False)
-    assert not _set_ok([a, b], {}, require_min=True)
+    assert _set_ok([a, b], {}, {}, require_min=False)
+    assert not _set_ok([a, b], {}, {}, require_min=True)
 
 
 def test_set_ok_needs_a_common_window():
     a, b = _cand("a", windows=[(540, 720)]), _cand("b", windows=[(780, 1020)])
-    assert not _set_ok([a, b], {}, require_min=False)
+    assert not _set_ok([a, b], {}, {}, require_min=False)
 
 
 def test_viable_with_reaches_minimum_via_third_person():
     a = _cand("a", min_people=3)
     b, c = _cand("b"), _cand("c")
-    assert _preferred_viable_start(a, [b], {}) is None
-    assert _preferred_viable_start(a, [b, c], {}) == 540
+    assert _preferred_viable_start(a, [b], {}, {}) is None
+    assert _preferred_viable_start(a, [b, c], {}, {}) == 540
 
 
 def test_solo_viewer_with_default_minimum_is_viable_alone():
     """No global two-person floor: a viewer whose "At Least" is "Just me"
     (the default) can gather alone; an explicit minimum of 2 can't."""
-    assert _preferred_viable_start(_cand("a"), [], {}) == 540
-    assert _preferred_viable_start(_cand("a", min_people=2), [], {}) is None
+    assert _preferred_viable_start(_cand("a"), [], {}, {}) == 540
+    assert _preferred_viable_start(_cand("a", min_people=2), [], {}, {}) is None
 
 
 def test_earliest_viable_start_is_the_min_headcount_time():
@@ -173,10 +173,10 @@ def test_earliest_viable_start_is_the_min_headcount_time():
     a = _cand("a", windows=[(540, 1020)], min_people=2)
     b = _cand("b", windows=[(540, 1020)], min_people=2)
     c = _cand("c", windows=[(720, 1020)])
-    assert _preferred_viable_start(a, [b, c], {}) == 540
+    assert _preferred_viable_start(a, [b, c], {}, {}) == 540
     # Force the trio (b needs 3) → the common window shifts to noon.
     b.min_people = 3
-    assert _preferred_viable_start(a, [b, c], {}) == 720
+    assert _preferred_viable_start(a, [b, c], {}, {}) == 720
 
 
 def test_liked_start_beats_earliest():
@@ -184,7 +184,7 @@ def test_liked_start_beats_earliest():
     the whole point of per-activity time preferences."""
     a = _cand("a", liked={840})  # 14:00
     b = _cand("b")
-    assert _preferred_viable_start(a, [b], {}) == 840
+    assert _preferred_viable_start(a, [b], {}, {}) == 840
 
 
 def test_disliked_window_start_is_escaped():
@@ -193,7 +193,7 @@ def test_disliked_window_start_is_escaped():
     a = _cand("a", disliked={540})  # dislikes 9:00, the window start
     b = _cand("b")
     # 9:30 (disliked + one step) scores (0 dislikes) over 9:00's (1 dislike).
-    assert _preferred_viable_start(a, [b], {}) == 570
+    assert _preferred_viable_start(a, [b], {}, {}) == 570
 
 
 def test_likes_outvote_a_single_dislike_only_when_clean():
@@ -216,11 +216,11 @@ def test_duration_bounds_must_be_mutually_satisfiable():
     growing or final (growth only tightens the bounds)."""
     a = _cand("a", min_dur=180)
     b = _cand("b", max_dur=120)
-    assert not _set_ok([a, b], {}, require_min=False)
-    assert not _set_ok([a, b], {}, require_min=True)
+    assert not _set_ok([a, b], {}, {}, require_min=False)
+    assert not _set_ok([a, b], {}, {}, require_min=True)
     # Compatible bounds (3h fits under a 4h cap) pass.
     b.max_dur = 240
-    assert _set_ok([a, b], {}, require_min=False)
+    assert _set_ok([a, b], {}, {}, require_min=False)
 
 
 def test_event_must_fit_the_shared_window():
@@ -228,9 +228,9 @@ def test_event_must_fit_the_shared_window():
     math says."""
     a = _cand("a", windows=[(540, 660)], min_dur=180)  # 9–11, wants ≥3h
     b = _cand("b", windows=[(540, 660)])
-    assert not _set_ok([a, b], {}, require_min=False)
+    assert not _set_ok([a, b], {}, {}, require_min=False)
     a.min_dur = 120  # exactly fits
-    assert _set_ok([a, b], {}, require_min=False)
+    assert _set_ok([a, b], {}, {}, require_min=False)
 
 
 def test_start_cannot_outlast_someones_window():
@@ -252,10 +252,10 @@ def test_growth_that_breaks_the_fit_falls_back_to_the_fitting_pair():
     a = _cand("a", windows=[(540, 1020)], min_dur=240, min_people=2)  # needs 4h
     b = _cand("b", windows=[(540, 1020)])
     c = _cand("c", windows=[(540, 720)])  # only 9–12 — a trio has just 3h
-    assert _preferred_viable_start(a, [b, c], {}) == 540
+    assert _preferred_viable_start(a, [b, c], {}, {}) == 540
     # And if EVERY companion shrinks the window below the minimum → nothing.
     b.windows = [(540, 720)]
-    assert _preferred_viable_start(a, [b, c], {}) is None
+    assert _preferred_viable_start(a, [b, c], {}, {}) is None
 
 
 def test_needed_more_requires_a_fitting_window():
@@ -263,24 +263,24 @@ def test_needed_more_requires_a_fitting_window():
     can't hold their minimum gets NO near-miss (nothing would fix it)."""
     # min_people 2 so the solo isn't simply viable outright.
     a = _cand("a", windows=[(540, 660)], min_dur=240, min_people=2)  # 2h window, wants 4h
-    assert _needed_more(a, [], {}) is None
+    assert _needed_more(a, [], {}, {}) is None
     # With a fitting window the near-miss math is unchanged.
     a.min_dur = 60
-    assert _needed_more(a, [], {}) == 1
+    assert _needed_more(a, [], {}, {}) == 1
 
 
 def test_needed_more_counts_the_gap():
     # Alone with the default "Just me" minimum: viable outright, no near-miss
     # (the fresh confirmable card handles it).
-    assert _needed_more(_cand("a"), [], {}) is None
+    assert _needed_more(_cand("a"), [], {}, {}) is None
     # Alone but wanting company: one short.
-    assert _needed_more(_cand("a", min_people=2), [], {}) == 1
+    assert _needed_more(_cand("a", min_people=2), [], {}, {}) == 1
     # A minimum of 4 with one compatible other: two short.
     a = _cand("a", min_people=4)
-    assert _needed_more(a, [_cand("b")], {}) == 2
+    assert _needed_more(a, [_cand("b")], {}, {}) == 2
     # A maximum below the binding minimum can never fit the missing heads.
     a = _cand("a", min_people=4, max_people=3)
-    assert _needed_more(a, [_cand("b")], {}) is None
+    assert _needed_more(a, [_cand("b")], {}, {}) is None
 
 
 # --- API ---------------------------------------------------------------------

@@ -9,6 +9,11 @@ import {
   isExploreButtonEnabled,
   setExploreButtonEnabled,
 } from '@/lib/exploreButtonFlag';
+import {
+  GROUPS_BUTTON_CHANGED_EVENT,
+  isGroupsButtonEnabled,
+  setGroupsButtonEnabled,
+} from '@/lib/groupsButtonFlag';
 
 interface CommitData {
   sha: string;
@@ -98,6 +103,7 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'build' | 'logs' | 'experimental'>('build');
   const [exploreButtonOn, setExploreButtonOn] = useState(false);
+  const [groupsButtonOn, setGroupsButtonOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [copyLabel, setCopyLabel] = useState('Copy All Logs');
@@ -209,6 +215,15 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
     update();
     window.addEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
     return () => window.removeEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
+  }, []);
+
+  // Same seed/sync for the legacy Groups Button flag (the group list moved
+  // behind this toggle once the upper-right button became Contacts).
+  useEffect(() => {
+    const update = () => setGroupsButtonOn(isGroupsButtonEnabled());
+    update();
+    window.addEventListener(GROUPS_BUTTON_CHANGED_EVENT, update);
+    return () => window.removeEventListener(GROUPS_BUTTON_CHANGED_EVENT, update);
   }, []);
 
   // Auto-scroll logs to bottom when new entries arrive
@@ -378,6 +393,17 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
                     checked={exploreButtonOn}
                     onChange={setExploreButtonEnabled}
                     aria-label="Explore Button"
+                  />
+                </div>
+                <div
+                  className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+                  onClick={() => setGroupsButtonEnabled(!groupsButtonOn)}
+                >
+                  <span className="text-sm text-gray-800 dark:text-gray-200">Groups Button</span>
+                  <SliderSwitch
+                    checked={groupsButtonOn}
+                    onChange={setGroupsButtonEnabled}
+                    aria-label="Groups Button"
                   />
                 </div>
               </div>

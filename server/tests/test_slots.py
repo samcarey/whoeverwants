@@ -348,26 +348,31 @@ def test_who_with_candidates_empty_for_new_browser(client):
 
 
 def test_who_with_candidates_lists_the_callers_groups(client):
-    """A group the caller is a member of is pickable, keyed on its real id. A
-    brand-new group has no title and no participants, so it reads as the same
-    "New Group" the FE shows for it."""
+    """Groups in the picker are the caller's private CONTACT groups (friend
+    labels, migration 158), keyed on their real ids — poll-group memberships
+    no longer surface here (though legacy refs to them still resolve)."""
     bid = str(uuid.uuid4())
-    group_id = client.post("/api/groups", headers=bid_headers(bid)).json()["id"]
+    _sign_in(client, bid, "Me")
+    client.post("/api/groups", headers=bid_headers(bid))  # poll group: NOT a candidate
+    gid = client.post(
+        "/api/friends/groups", json={"name": "Crew"}, headers=bid_headers(bid)
+    ).json()["id"]
     groups = _candidates(client, browser_id=bid, kind="groups")
-    assert [g["id"] for g in groups] == [group_id]
-    assert groups[0]["name"] == "New Group"
+    assert [g["id"] for g in groups] == [gid]
+    assert groups[0]["name"] == "Crew"
 
 
 def test_who_with_candidates_rank_recently_picked_first(client):
     """The picker's order is "what you reached for last", so a group used in a
     who-with outranks one that has never been picked."""
     bid = str(uuid.uuid4())
-    older = client.post("/api/groups", headers=bid_headers(bid)).json()["id"]
-    newer = client.post("/api/groups", headers=bid_headers(bid)).json()["id"]
-    # Name them so the alphabetical fallback would put "A…" first — the
+    _sign_in(client, bid, "Me")
+    # Named so the alphabetical fallback would put "A…" first — the
     # recency sort has to override that to prove it is doing the work.
-    for gid, title in ((older, "Aardvarks"), (newer, "Zebras")):
-        client.post(f"/api/groups/{gid}/title", json={"group_title": title}, headers=bid_headers(bid))
+    client.post("/api/friends/groups", json={"name": "Aardvarks"}, headers=bid_headers(bid))
+    newer = client.post(
+        "/api/friends/groups", json={"name": "Zebras"}, headers=bid_headers(bid)
+    ).json()["id"]
     assert [g["name"] for g in _candidates(client, browser_id=bid, kind="groups")] == [
         "Aardvarks",
         "Zebras",
@@ -455,6 +460,14 @@ def _share_a_group(client, a_browser, b_browser):
     return gid
 
 
+def _befriend(client, a_browser, b_browser, a_uid, b_uid):
+    """Mutual friend requests → auto-accepted friendship (migration 158)."""
+    r = client.post("/api/friends/requests", json={"to_user_id": b_uid}, headers=bid_headers(a_browser))
+    assert r.status_code == 200, r.text
+    r = client.post("/api/friends/requests", json={"to_user_id": a_uid}, headers=bid_headers(b_browser))
+    assert r.status_code == 200, r.text
+
+
 def _all_suggested_names(res) -> set[str]:
     body = res.json()
     return {s["name"] for group in ("overlapping", "yours", "others") for s in body[group]}
@@ -511,13 +524,15 @@ def test_suggestions_respect_the_suggesters_who_with(client):
 
 
 def test_who_with_candidates_list_contacts(client):
-    """People come from the caller's address book — the same population the
-    invite-members picker uses — and the endpoint reconciles inline, so someone
-    they only just started sharing a group with is immediately pickable."""
+    """People come from the caller's accepted FRIENDS (migration 158) —
+    merely sharing a group makes someone a contact (a friend-request
+    suggestion), not a who-with candidate."""
     me, them = str(uuid.uuid4()), str(uuid.uuid4())
-    _sign_in(client, me, "Me")
-    _sign_in(client, them, "Priya")
+    me_uid = _sign_in(client, me, "Me")
+    them_uid = _sign_in(client, them, "Priya")
     _share_a_group(client, me, them)
+    assert _candidates(client, browser_id=me, kind="people") == []
+    _befriend(client, me, them, me_uid, them_uid)
     people = _candidates(client, browser_id=me, kind="people")
     assert [p["name"] for p in people] == ["Priya"]
     assert people[0]["id"]
@@ -528,9 +543,10 @@ def test_who_with_candidates_rank_across_groups_and_people(client):
     a group that never was. Splitting the list by kind would make every group
     beat every person, which is not what "what I reached for last" means."""
     me, them = str(uuid.uuid4()), str(uuid.uuid4())
-    _sign_in(client, me, "Me")
+    me_uid = _sign_in(client, me, "Me")
     them_uid = _sign_in(client, them, "Priya")
-    _share_a_group(client, me, them)
+    _befriend(client, me, them, me_uid, them_uid)
+    client.post("/api/friends/groups", json={"name": "New Group"}, headers=bid_headers(me))
     # Groups lead while nothing has been picked (everything ties).
     assert [c["kind"] for c in _candidates(client, browser_id=me)] == ["groups", "people"]
 

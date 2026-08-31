@@ -33,13 +33,16 @@ import PlaylistTab from "@/components/PlaylistTab";
 import { getRememberedScroll, HOME_SCROLL_KEY } from "@/lib/scrollMemory";
 import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 import { isExploreButtonEnabled } from "@/lib/exploreButtonFlag";
+import { isGroupsButtonEnabled } from "@/lib/groupsButtonFlag";
 import {
   GearIcon,
   GlobeIcon,
   GroupsIcon,
+  LegacyGroupsIcon,
   HOME_CHROME_SLOT_CLASS,
   GROUPS_BUTTON_RIGHT,
   EXPLORE_BUTTON_RIGHT,
+  LEGACY_GROUPS_BUTTON_RIGHT,
 } from "@/components/homeChromeIcons";
 
 export default function HomeBackdropHost(): React.ReactElement | null {
@@ -54,6 +57,7 @@ export default function HomeBackdropHost(): React.ReactElement | null {
   // when the flag-off real home committed (the reported "shown until the
   // transition completes then disappears" flicker).
   const showExplore = isExploreButtonEnabled();
+  const showLegacyGroups = isGroupsButtonEnabled();
 
   return createPortal(
     // Wrap in a div carrying the Geist sans font-family. The portal target
@@ -116,6 +120,11 @@ export default function HomeBackdropHost(): React.ReactElement | null {
                 a home that already has it — no pop-in on commit. Gated on the
                 same flag so a flag-off home doesn't flash it through the
                 slide. Decorative; the real buttons live in template.tsx. */}
+            {showLegacyGroups && (
+              <span aria-hidden="true" className={HOME_CHROME_SLOT_CLASS} style={{ right: LEGACY_GROUPS_BUTTON_RIGHT }}>
+                <LegacyGroupsIcon />
+              </span>
+            )}
             {showExplore && (
               <span aria-hidden="true" className={HOME_CHROME_SLOT_CLASS} style={{ right: EXPLORE_BUTTON_RIGHT }}>
                 <GlobeIcon />

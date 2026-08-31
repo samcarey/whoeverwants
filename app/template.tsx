@@ -9,9 +9,10 @@ import { navigateWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
-import { GearIcon, GlobeIcon, GroupsIcon, GROUPS_BUTTON_RIGHT, EXPLORE_BUTTON_RIGHT } from '@/components/homeChromeIcons';
+import { GearIcon, GlobeIcon, GroupsIcon, LegacyGroupsIcon, GROUPS_BUTTON_RIGHT, EXPLORE_BUTTON_RIGHT, LEGACY_GROUPS_BUTTON_RIGHT } from '@/components/homeChromeIcons';
 import { markAppHydrated } from '@/lib/hydration';
 import { EXPLORE_BUTTON_CHANGED_EVENT, exploreParamPresent, syncExploreParam } from '@/lib/exploreButtonFlag';
+import { GROUPS_BUTTON_CHANGED_EVENT, groupsParamPresent, syncGroupsParam } from '@/lib/groupsButtonFlag';
 
 // `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
 // mounted in `app/layout.tsx` via `<PersistentCreatePollHost />` so it
@@ -56,6 +57,10 @@ function TemplateInner({ children }: AppTemplateProps) {
   // presence; effect-seeded (not lazy-init) to keep SSR/hydration in lockstep —
   // a one-frame flash on this experimental opt-in is fine.
   const [showExplore, setShowExplore] = useState(false);
+  // Same pattern for the LEGACY groups-list button (`?groups=1`) — the
+  // upper-right people button opens /contacts now, and the old /groups page
+  // is reachable only through this experimental flag.
+  const [showLegacyGroups, setShowLegacyGroups] = useState(false);
 
   // Re-apply the param after every route change (navigation strips query
   // params) and refresh `showExplore`. `syncExploreParam` re-adds/strips it to
@@ -63,6 +68,8 @@ function TemplateInner({ children }: AppTemplateProps) {
   useEffect(() => {
     syncExploreParam();
     setShowExplore(exploreParamPresent());
+    syncGroupsParam();
+    setShowLegacyGroups(groupsParamPresent());
   }, [pathname]);
 
   // Toggle-driven changes (from the modal) fire the event; listener registered
@@ -71,6 +78,12 @@ function TemplateInner({ children }: AppTemplateProps) {
     const update = () => setShowExplore(exploreParamPresent());
     window.addEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
     return () => window.removeEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
+  }, []);
+
+  useEffect(() => {
+    const update = () => setShowLegacyGroups(groupsParamPresent());
+    window.addEventListener(GROUPS_BUTTON_CHANGED_EVENT, update);
+    return () => window.removeEventListener(GROUPS_BUTTON_CHANGED_EVENT, update);
   }, []);
 
   // Set mounted state for portal rendering + install client log forwarder on dev sites
@@ -178,6 +191,11 @@ function TemplateInner({ children }: AppTemplateProps) {
   // its own title bar + floating back button via HeaderPortal, so it opts out
   // of the fallback header too.
   const isGroupsPage = pathname === '/groups' || pathname === '/groups/';
+  // /contacts (friends + requests + contact groups, reached from home's
+  // upper-right button) renders its own title bar + back button too.
+  const isContactsPage = pathname === '/contacts' || pathname === '/contacts/';
+  // /f/<code> (the shareable friend-profile link) renders its own card UI.
+  const isFriendLinkPage = pathname.startsWith('/f/');
 
   // The draft poll card on every group-like page hosts the inline question
   // form (category/for fields + question fields) plus the staged-questions
@@ -189,7 +207,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   return (
     <>
       {/* Fallback header for pages without a page-specific header (not group, settings, home, invite redemption, explore, or create-modal). */}
-      {!isGroupFamilyPage && !isSettingsPage && !isSettingsEditPage && !isInvitePage && !isExplorePage && !isEventPage && !isGroupsPage && pathname !== '/' && (
+      {!isGroupFamilyPage && !isSettingsPage && !isSettingsEditPage && !isInvitePage && !isExplorePage && !isEventPage && !isGroupsPage && !isContactsPage && !isFriendLinkPage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -264,17 +282,33 @@ function TemplateInner({ children }: AppTemplateProps) {
                 <GlobeIcon />
               </button>
               )}
-              {/* Groups — the mirror of the settings gear at the other end
-                  of the row. Home is the playlist; the group list lives at
-                  /groups. Hidden during bulk-forget selection mode, like the
-                  gear (that mode's trashcan portals into this same slot). */}
-              {!homeSelectionMode && (
+              {/* Legacy groups list — experimental-flag-gated (`?groups=1`,
+                  toggled in the Experimental tab) now that the people button
+                  opens /contacts. Sits one slot left of the globe so all
+                  three right-edge buttons can coexist. */}
+              {!homeSelectionMode && showLegacyGroups && (
               <button
                 onClick={() => navigateWithTransition(router, '/groups', 'forward')}
                 {...prefetchOnHover('/groups')}
                 className="absolute top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
-                style={{ right: GROUPS_BUTTON_RIGHT }}
+                style={{ right: LEGACY_GROUPS_BUTTON_RIGHT }}
                 aria-label="Groups"
+              >
+                <LegacyGroupsIcon />
+              </button>
+              )}
+              {/* Contacts — the mirror of the settings gear at the other end
+                  of the row: friends, requests, and contact groups (the
+                  with/without suggestion pools). Hidden during bulk-forget
+                  selection mode, like the gear (that mode's trashcan portals
+                  into this same slot). */}
+              {!homeSelectionMode && (
+              <button
+                onClick={() => navigateWithTransition(router, '/contacts', 'forward')}
+                {...prefetchOnHover('/contacts')}
+                className="absolute top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
+                style={{ right: GROUPS_BUTTON_RIGHT }}
+                aria-label="Contacts"
               >
                 <GroupsIcon />
               </button>

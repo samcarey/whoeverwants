@@ -57,12 +57,30 @@ export function GlobeIcon() {
   );
 }
 
+/** The legacy /groups list's entry (experimental-flag-gated): a stacked
+ *  rectangles glyph (Heroicons rectangle-stack) — the people glyph now means
+ *  Contacts. */
+export function LegacyGroupsIcon() {
+  return (
+    <svg className={ICON_CLASS} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M6 6.878V6a2.25 2.25 0 012.25-2.25h7.5A2.25 2.25 0 0118 6v.878m-12 0c.235-.083.487-.128.75-.128h10.5c.263 0 .515.045.75.128m-12 0A2.25 2.25 0 004.5 9v.878m13.5-3A2.25 2.25 0 0119.5 9v.878m0 0a2.246 2.246 0 00-.75-.128H5.25c-.263 0-.515.045-.75.128m15 0A2.25 2.25 0 0121 12v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6c0-.98.626-1.813 1.5-2.122"
+      />
+    </svg>
+  );
+}
+
 /** Shared slot chrome for the title row's corner buttons — the real ones add
  *  hover/active classes on top. */
 export const HOME_CHROME_SLOT_CLASS =
   "absolute top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full";
 
-/** Right-edge offset for the groups button, and (when the explore flag is on)
- *  the globe sitting one slot further left. */
+/** Right-edge offset for the contacts (people) button, and — when the
+ *  matching experimental flags are on — the globe one slot further left and
+ *  the legacy groups button one further still, so all three coexist. */
 export const GROUPS_BUTTON_RIGHT = "max(0.25rem, env(safe-area-inset-right, 0px))";
 export const EXPLORE_BUTTON_RIGHT = "calc(max(0.25rem, env(safe-area-inset-right, 0px)) + 2.5rem)";
+export const LEGACY_GROUPS_BUTTON_RIGHT = "calc(max(0.25rem, env(safe-area-inset-right, 0px)) + 5rem)";
