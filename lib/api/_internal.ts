@@ -69,6 +69,7 @@ export const SEARCH_BASE = getApiEndpoint('search');
 export const NOTIFICATIONS_BASE = getApiEndpoint('notifications');
 export const AUTH_BASE = getApiEndpoint('auth');
 export const SLOT_BASE = getApiEndpoint('slots');
+export const FRIEND_BASE = getApiEndpoint('friends');
 
 const BROWSER_ID_HEADER = 'X-Browser-Id';
 
@@ -160,6 +161,10 @@ export function authFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function slotFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return fetchWithBase<T>(SLOT_BASE, path, options);
+}
+
+export function friendFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  return fetchWithBase<T>(FRIEND_BASE, path, options);
 }
 
 /**

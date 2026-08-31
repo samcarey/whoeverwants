@@ -16,6 +16,7 @@ from routers.users import router as users_router
 from routers.notifications import router as notifications_router
 from routers.internal import router as internal_router
 from routers.slots import router as slots_router
+from routers.friends import router as friends_router
 
 app = FastAPI(title="WhoeverWants API", redirect_slashes=False)
 
@@ -60,6 +61,7 @@ app.include_router(internal_router)
 app.include_router(search_router)
 app.include_router(showtimes_router)
 app.include_router(slots_router)
+app.include_router(friends_router)
 app.include_router(client_logs_router)
 
 

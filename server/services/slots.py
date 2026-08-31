@@ -425,7 +425,16 @@ def _insert_slot_activities(conn, slot_id: str, activities, *, user_id: str) -> 
         who_with = _clean_who_with(raw.get("who_with"))
         if who_with:
             if ref_maps is None:
-                ref_maps = (_member_group_names(conn, user_id), _contact_names(conn, user_id))
+                # Validation stays a SUPERSET of the picker's pools: contact
+                # groups + friends (what the picker now offers) UNIONED with
+                # the legacy poll-group memberships + address-book contacts,
+                # so refs saved before the friends system keep resolving.
+                from services.friends import contact_group_names, friend_names
+
+                ref_maps = (
+                    {**_member_group_names(conn, user_id), **contact_group_names(conn, user_id)},
+                    {**_contact_names(conn, user_id), **friend_names(conn, user_id)},
+                )
             who_with = _resolve_who_with(who_with, *ref_maps)
         time_prefs = _clean_time_prefs(raw.get("time_prefs"))
         min_hours = _clean_hours(raw.get("min_hours"))
@@ -658,23 +667,27 @@ def who_with_candidates(conn, *, user_id: str | None) -> list[dict]:
     field the pick belongs in, so the picker can render it without a second
     lookup.
 
-    Groups = the account's memberships; people = its contacts address book —
-    the SAME populations `_resolve_who_with` validates saves against, so the
-    picker can never offer something that would then be nulled on save.
+    Groups = the account's CONTACT groups (private friend labels); people =
+    its accepted FRIENDS (named). Both are subsets of the populations
+    `_resolve_who_with` validates saves against (which stays wider — legacy
+    poll-group + address-book refs must keep resolving), so the picker can
+    never offer something that would then be nulled on save.
 
     ONE list rather than two because the ranking is global: whatever the caller
     reached for most recently comes first, whether that's a group or a person.
     Splitting by kind would make every group outrank every person. Groups only
     lead among entries that tie — i.e. everything never picked, which then
     sorts alphabetically. No account yet (fresh anonymous browser) → empty."""
+    from services.friends import contact_group_names, friend_names
+
     if not user_id:
         return []
     group_seen, people_seen = _who_with_recency(conn, user_id)
     rows = [
         {"kind": kind, "id": cid, "name": name, "seen": seen.get(cid, ""), "rank": rank}
         for kind, names, seen, rank in (
-            ("groups", _member_group_names(conn, user_id), group_seen, 0),
-            ("people", _contact_names(conn, user_id), people_seen, 1),
+            ("groups", contact_group_names(conn, user_id), group_seen, 0),
+            ("people", friend_names(conn, user_id), people_seen, 1),
         )
         for cid, name in names.items()
     ]
@@ -759,13 +772,19 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
     # viewer (see _admits_viewer) — someone planning "poker, only with my
     # crew" shouldn't advertise poker to strangers.
     viewer_groups = _viewer_group_ids(conn, user_id)
+    # Blocked pairs (either direction) never see each other's activities —
+    # the suggestion-surface half of the block partition (the matching half
+    # lives in slot_events._allows).
+    from services.friends import blocked_user_ids
+
+    blocked = blocked_user_ids(conn, user_id) if user_id else set()
 
     # --- Group 1: other users' OVERLAPPING slots -------------------------
     overlap_map: dict[str, dict] = {}
     if selected_days:
         cand = conn.execute(
             """
-            SELECT s.id, s.day_time_windows, sa.activity, sa.emoji, sa.who_with, sa.created_at
+            SELECT s.id, s.user_id, s.day_time_windows, sa.activity, sa.emoji, sa.who_with, sa.created_at
               FROM slots s
               JOIN slot_activities sa ON sa.slot_id = s.id
              WHERE (%(uid)s::uuid IS NULL OR s.user_id <> %(uid)s::uuid)
@@ -779,6 +798,8 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
         # Cache each candidate slot's overlap decision so we only test once.
         overlap_cache: dict[str, bool] = {}
         for r in cand:
+            if str(r["user_id"]) in blocked:
+                continue
             sid = str(r["id"])
             if sid not in overlap_cache:
                 overlap_cache[sid] = _periods_overlap(selection, _windows_by_day(r["day_time_windows"]))
@@ -807,7 +828,7 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
     others_map: dict[str, dict] = {}
     rows = conn.execute(
         """
-        SELECT sa.activity, sa.emoji, sa.who_with, sa.created_at
+        SELECT s.user_id, sa.activity, sa.emoji, sa.who_with, sa.created_at
           FROM slot_activities sa
           JOIN slots s ON s.id = sa.slot_id
          WHERE (%(uid)s::uuid IS NULL OR s.user_id <> %(uid)s::uuid)
@@ -815,6 +836,8 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
         {"uid": user_id},
     ).fetchall()
     for r in rows:
+        if str(r["user_id"]) in blocked:
+            continue
         if not _admits_viewer(r["who_with"], user_id, viewer_groups):
             continue
         _accumulate(

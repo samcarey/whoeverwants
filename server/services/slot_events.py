@@ -198,9 +198,21 @@ def _fitting_windows(cands: list[_Candidate]) -> list[tuple[int, int]]:
     return [w for w in _common_windows(cands) if w[1] - w[0] >= req]
 
 
-def _allows(c: _Candidate, other_uid: str, members: dict[str, set[str]]) -> bool:
-    """Would `c` do this activity alongside `other_uid`? Exclusions veto;
-    a non-empty include set must claim them; empty include set = anyone."""
+_EMPTY_SET: frozenset[str] = frozenset()
+
+
+def _allows(
+    c: _Candidate,
+    other_uid: str,
+    members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
+) -> bool:
+    """Would `c` do this activity alongside `other_uid`? A block (either
+    direction — `blocked` is the symmetric closure from friends.load_blocks)
+    vetoes before anything else; then exclusions veto; a non-empty include
+    set must claim them; empty include set = anyone."""
+    if other_uid in blocked.get(c.user_id, _EMPTY_SET):
+        return False
     if other_uid in c.exclude_people:
         return False
     for gid in c.exclude_groups:
@@ -216,6 +228,7 @@ def _allows(c: _Candidate, other_uid: str, members: dict[str, set[str]]) -> bool
 def _constraints_ok(
     cands: list[_Candidate],
     members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
     *,
     require_min: bool,
 ) -> bool:
@@ -234,7 +247,7 @@ def _constraints_ok(
         if c.max_people is not None and n > c.max_people:
             return False
         for other in cands:
-            if other.user_id != c.user_id and not _allows(c, other.user_id, members):
+            if other.user_id != c.user_id and not _allows(c, other.user_id, members, blocked):
                 return False
     return True
 
@@ -242,12 +255,13 @@ def _constraints_ok(
 def _set_ok(
     cands: list[_Candidate],
     members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
     *,
     require_min: bool,
 ) -> bool:
     """Constraints AND a shared time window LONG ENOUGH for the binding
     minimum duration — the full "this set works" check."""
-    return _constraints_ok(cands, members, require_min=require_min) and bool(
+    return _constraints_ok(cands, members, blocked, require_min=require_min) and bool(
         _fitting_windows(cands)
     )
 
@@ -299,6 +313,7 @@ def _preferred_viable_start(
     viewer: _Candidate,
     others: list[_Candidate],
     members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
 ) -> int | None:
     """The best start minute at which SOME subset containing the viewer (the
     singleton included — going alone is legitimate when the viewer's own
@@ -312,8 +327,8 @@ def _preferred_viable_start(
     pool = [
         o
         for o in others
-        if _allows(viewer, o.user_id, members)
-        and _allows(o, viewer.user_id, members)
+        if _allows(viewer, o.user_id, members, blocked)
+        and _allows(o, viewer.user_id, members, blocked)
         and _intersect(viewer.windows, o.windows)
     ][: MAX_SEARCH_CANDIDATES - 1]
     best: tuple[int, int, int] | None = None
@@ -322,7 +337,7 @@ def _preferred_viable_start(
     # minimum is "Just me" — no global two-person floor.
     for mask in range(0, 1 << len(pool)):
         subset = [viewer] + [o for i, o in enumerate(pool) if mask >> i & 1]
-        if not _constraints_ok(subset, members, require_min=True):
+        if not _constraints_ok(subset, members, blocked, require_min=True):
             continue
         commons = _common_windows(subset)
         if not commons:
@@ -339,6 +354,7 @@ def _needed_more(
     viewer: _Candidate,
     others: list[_Candidate],
     members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
 ) -> int | None:
     """How many MORE people (beyond every compatible candidate who exists)
     the smallest near-viable gathering including the viewer still needs —
@@ -352,8 +368,8 @@ def _needed_more(
     pool = [
         o
         for o in others
-        if _allows(viewer, o.user_id, members)
-        and _allows(o, viewer.user_id, members)
+        if _allows(viewer, o.user_id, members, blocked)
+        and _allows(o, viewer.user_id, members, blocked)
         and _intersect(viewer.windows, o.windows)
     ][: MAX_SEARCH_CANDIDATES - 1]
     best: int | None = None
@@ -361,7 +377,7 @@ def _needed_more(
     # common case of "I declared an activity and nobody else has it yet".
     for mask in range(0, 1 << len(pool)):
         subset = [viewer] + [o for i, o in enumerate(pool) if mask >> i & 1]
-        if not _constraints_ok(subset, members, require_min=False):
+        if not _constraints_ok(subset, members, blocked, require_min=False):
             continue
         if not _fitting_windows(subset):
             continue
@@ -382,6 +398,7 @@ def _near_miss_payload(
     cands: dict[str, _Candidate],
     viewer_id: str,
     members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
     unattached: set[str],
 ) -> dict | None:
     """The "needs N more" card shown when NO viable gathering exists for the
@@ -390,7 +407,7 @@ def _near_miss_payload(
     the gathering is."""
     viewer = cands[viewer_id]
     pool = [cands[u] for u in unattached - {viewer_id}]
-    need = _needed_more(viewer, pool, members)
+    need = _needed_more(viewer, pool, members, blocked)
     if need is None:
         return None
     window = max(viewer.windows, key=lambda w: w[1] - w[0]) if viewer.windows else None
@@ -500,6 +517,15 @@ def _load_memberships(
     out: dict[str, set[str]] = {}
     for r in rows:
         out.setdefault(str(r["group_id"]), set()).add(str(r["user_id"]))
+    # Who-with group refs can now ALSO point at private CONTACT groups
+    # (friend labels, migration 158) — merge their memberships under the
+    # same map so `_allows` resolves them identically. Ids are UUIDs in
+    # disjoint tables, so the union can't collide.
+    from services.friends import contact_group_memberships
+
+    uid_set = {str(u) for u in user_ids}
+    for gid, mus in contact_group_memberships(conn, group_ids).items():
+        out.setdefault(gid, set()).update(mus & uid_set)
     return out
 
 
@@ -582,6 +608,7 @@ def _party_payload(
     cands: dict[str, _Candidate],
     viewer_id: str,
     members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
     *,
     party_id: str | None,
     party_uids: set[str],
@@ -600,7 +627,7 @@ def _party_payload(
     viewer_confirmed = viewer_id in {c.user_id for c in confirmed}
     pool_ids = ({c.user_id for c in confirmed} | unattached) - {viewer_id}
     pool = [cands[u] for u in pool_ids]
-    earliest_viable = _preferred_viable_start(viewer, pool, members)
+    earliest_viable = _preferred_viable_start(viewer, pool, members, blocked)
     if party_id is None and earliest_viable is None:
         return None
 
@@ -609,12 +636,12 @@ def _party_payload(
         joined = confirmed
     else:
         joined = confirmed + [viewer]
-        can_confirm = _set_ok(joined, members, require_min=False)
+        can_confirm = _set_ok(joined, members, blocked, require_min=False)
 
     # Met = the people actually going satisfy every one of THEIR conditions,
     # minimums included. A solo confirmer whose "At Least" is "Just me" IS a
     # met event — going alone counts; there is no global two-person floor.
-    met = bool(confirmed) and _set_ok(confirmed, members, require_min=True)
+    met = bool(confirmed) and _set_ok(confirmed, members, blocked, require_min=True)
 
     # The "@ time" on the card: once the event is ON it's the best-preferred
     # start the people actually going all share; until then it's the
@@ -667,6 +694,7 @@ def _cards_for_key(
     parties: dict[str, set[str]],
     viewer_id: str,
     members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
     poll_info: dict | None = None,
 ) -> list[dict]:
     """Every card the viewer sees for one (day, activity): each LIVE party
@@ -685,9 +713,18 @@ def _cards_for_key(
     cards: list[dict] = []
     viewer_attached = False
     joinable = False
+    # A party containing someone the viewer is blocked with (either
+    # direction) doesn't exist from the viewer's side — its members still
+    # count as attached (they're unavailable to grow the viewer's party),
+    # but no card leaks the blocked person's plans. If the viewer shares a
+    # party with someone they later blocked, their own confirmation
+    # presents as fresh too — self-healing (a re-confirm moves them out).
+    viewer_blocked = blocked.get(viewer_id, _EMPTY_SET)
     for eid, uids in live.items():
+        if uids & viewer_blocked:
+            continue
         card = _party_payload(
-            day, cands, viewer_id, members,
+            day, cands, viewer_id, members, blocked,
             party_id=eid, party_uids=uids, unattached=unattached,
         )
         if card is None:
@@ -699,7 +736,7 @@ def _cards_for_key(
         cards.append(card)
     if not viewer_attached and not joinable:
         fresh = _party_payload(
-            day, cands, viewer_id, members,
+            day, cands, viewer_id, members, blocked,
             party_id=None, party_uids=set(), unattached=unattached,
         )
         if fresh is not None:
@@ -707,7 +744,7 @@ def _cards_for_key(
         elif not cards:
             # Nothing viable AND nothing else to show for this key — surface
             # how close it is ("needs N more") instead of a silent dead end.
-            near = _near_miss_payload(day, cands, viewer_id, members, unattached)
+            near = _near_miss_payload(day, cands, viewer_id, members, blocked, unattached)
             if near is not None:
                 cards.append(near)
     # The key's started poll (if any) rides on EVERY card of the key — it
@@ -726,6 +763,17 @@ def _cards_for_key(
         )
     )
     return cards
+
+
+def _load_blocks(conn, uids: set[str]) -> dict[str, set[str]]:
+    """Symmetric block closure over the candidate uid set — loaded at the
+    same three seams as `_load_memberships` and threaded through `_allows`
+    so a blocked pair never lands in the same suggested event, while each
+    still gets events without the other (the per-viewer viability search
+    only enumerates subsets containing the viewer)."""
+    from services.friends import load_blocks
+
+    return load_blocks(conn, uids)
 
 
 def _all_ref_group_ids(events: dict[tuple[str, str], dict[str, _Candidate]]) -> tuple[set[str], set[str]]:
@@ -755,13 +803,14 @@ def list_events(conn, *, user_id: str | None) -> list[dict]:
     events = _gather_days(conn, days)
     gids, uids = _all_ref_group_ids(events)
     members = _load_memberships(conn, gids, uids)
+    blocked = _load_blocks(conn, uids)
     confirmations = _load_confirmations(conn, days)
     polls = _load_event_polls(conn, days)
     out: list[dict] = []
     for (day, key), cands in events.items():
         out.extend(
             _cards_for_key(
-                day, cands, confirmations.get((day, key), {}), user_id, members,
+                day, cands, confirmations.get((day, key), {}), user_id, members, blocked,
                 poll_info=polls.get((day, key)),
             )
         )
@@ -825,6 +874,7 @@ def set_confirmation(
         raise NoSuchEventError()
     gids, uids = _all_ref_group_ids({(day, key): cands})
     members = _load_memberships(conn, gids, uids)
+    blocked = _load_blocks(conn, uids)
     parties = _load_confirmations(conn, [day]).get((day, key), {})
     valid = {eid: {u for u in uids_ if u in cands} for eid, uids_ in parties.items()}
     attached: set[str] = set().union(*valid.values()) if valid else set()
@@ -832,7 +882,7 @@ def set_confirmation(
 
     def _may_join(uids_: set[str]) -> bool:
         joined = [cands[u] for u in uids_] + [cands[user_id]]
-        return _set_ok(joined, members, require_min=False)
+        return _set_ok(joined, members, blocked, require_min=False)
 
     target: str | None = None
     if confirmed:
@@ -850,7 +900,7 @@ def set_confirmation(
                     break
             if target is None:
                 pool = [cands[u] for u in unattached - {user_id}]
-                if _preferred_viable_start(cands[user_id], pool, members) is None:
+                if _preferred_viable_start(cands[user_id], pool, members, blocked) is None:
                     raise EventFullError()
                 row = conn.execute(
                     "INSERT INTO slot_events (day, activity) VALUES (%(d)s::date, %(a)s) RETURNING id",
@@ -902,7 +952,7 @@ def set_confirmation(
 
     fresh_parties = _load_confirmations(conn, [day]).get((day, key), {})
     poll_info = _load_event_polls(conn, [day]).get((day, key))
-    cards = _cards_for_key(day, cands, fresh_parties, user_id, members, poll_info=poll_info)
+    cards = _cards_for_key(day, cands, fresh_parties, user_id, members, blocked, poll_info=poll_info)
     for card in cards:
         if confirmed and card["id"] == target:
             return card
@@ -1061,6 +1111,7 @@ def start_due_event_polls(conn, *, user_id: str | None, days: list[str]) -> list
     drafts = _load_poll_drafts(conn, days)
     gids, uids = _all_ref_group_ids(events)
     members = _load_memberships(conn, gids, uids)
+    blocked = _load_blocks(conn, uids)
     created: list[str] = []
     for day, key in pending:
         cands = events[(day, key)]
@@ -1069,7 +1120,7 @@ def start_due_event_polls(conn, *, user_id: str | None, days: list[str]) -> list
             if owner is None:
                 continue
             pool = [c for c in cands.values() if c.user_id != owner.user_id]
-            if _preferred_viable_start(owner, pool, members) is None:
+            if _preferred_viable_start(owner, pool, members, blocked) is None:
                 continue
             pid = _create_event_poll(conn, day, owner.display or key, cands, row)
             if pid:
