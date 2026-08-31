@@ -121,6 +121,7 @@ export default function ContactsPage() {
   // Suggestion rows the user tapped "Add" on this session (optimistic).
   const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+  const groupCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
@@ -303,6 +304,29 @@ export default function ContactsPage() {
       );
     }
   };
+
+  /** Expand a group's card and scroll it under the fixed title bar — used
+   *  by nested-group pill taps and the `?group=<id>` deep link. */
+  const jumpToGroup = (groupId: string) => {
+    setExpandedGroupId(groupId);
+    requestAnimationFrame(() => {
+      groupCardRefs.current.get(groupId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
+  // One-shot: /contacts?group=<id> lands expanded + scrolled to that group.
+  const jumpedFromUrlRef = useRef(false);
+  useEffect(() => {
+    if (jumpedFromUrlRef.current || !overview?.signed_in) return;
+    const target = new URLSearchParams(window.location.search).get("group");
+    if (!target) return;
+    jumpedFromUrlRef.current = true;
+    if (overview.groups.some((g) => g.id === target)) {
+      // Let the cards commit first, then scroll.
+      window.setTimeout(() => jumpToGroup(target), 100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overview]);
 
   /** Groups that can reach `groupId` down the nesting tree (itself + its
    *  ancestors) — excluded from its picker so a pick can't create a cycle
@@ -657,7 +681,15 @@ export default function ContactsPage() {
                   {overview.groups.map((group) => {
                     const expanded = expandedGroupId === group.id;
                     return (
-                      <div key={group.id} className={`${CARD_CLASS} py-1`}>
+                      <div
+                        key={group.id}
+                        ref={(node) => {
+                          if (node) groupCardRefs.current.set(group.id, node);
+                          else groupCardRefs.current.delete(group.id);
+                        }}
+                        // scroll-mt clears the fixed Contacts title bar.
+                        className={`${CARD_CLASS} py-1 scroll-mt-20`}
+                      >
                         <button
                           type="button"
                           onClick={() => setExpandedGroupId(expanded ? null : group.id)}
@@ -730,6 +762,9 @@ export default function ContactsPage() {
                                 })()}
                                 onAdd={(c) => addGroupPick(group, c)}
                                 onRemove={(c) => removeGroupPick(group, c)}
+                                onPillTap={(c) => {
+                                  if (c.kind === "groups" && c.id) jumpToGroup(c.id);
+                                }}
                               />
                             )}
                             <button

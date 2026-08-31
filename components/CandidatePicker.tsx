@@ -71,6 +71,10 @@ interface CandidatePickerProps {
   onRemove: (c: Candidate) => void;
   /** Fired when the search box expands/collapses (and on unmount while open). */
   onOpenChange?: (open: boolean) => void;
+  /** When set, tapping a picked pill's BODY (not its ✕) fires this — e.g.
+   *  the contacts page jumps to a nested group's card. Without it, pill
+   *  taps are inert (only the ✕ acts), as before. */
+  onPillTap?: (c: Candidate) => void;
 }
 
 export default function CandidatePicker({
@@ -81,6 +85,7 @@ export default function CandidatePicker({
   onAdd,
   onRemove,
   onOpenChange,
+  onPillTap,
 }: CandidatePickerProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -181,13 +186,18 @@ export default function CandidatePicker({
             <span
               key={candidateKey(c)}
               data-pill
-              className="inline-flex max-w-full cursor-default items-center gap-1.5 rounded-full border border-blue-500 bg-blue-100 py-1.5 pl-3 pr-1.5 text-sm text-blue-700 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-300"
+              onClick={onPillTap ? () => onPillTap(c) : undefined}
+              className={`inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-500 bg-blue-100 py-1.5 pl-3 pr-1.5 text-sm text-blue-700 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-300 ${onPillTap ? "cursor-pointer" : "cursor-default"}`}
             >
               {c.kind === "groups" && <GroupGlyph />}
               <span className="truncate">{c.name}</span>
               <button
                 type="button"
-                onClick={() => onRemove(c)}
+                onClick={(e) => {
+                  // The ✕ removes; never also fire the pill-body tap.
+                  e.stopPropagation();
+                  onRemove(c);
+                }}
                 aria-label={`Remove ${c.name}`}
                 className="shrink-0 rounded-full p-0.5 text-blue-500 hover:bg-blue-200/70 dark:text-blue-300 dark:hover:bg-blue-800/60"
               >
