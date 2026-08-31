@@ -121,7 +121,11 @@ export default function HomeBackdropHost(): React.ReactElement | null {
                 same flag so a flag-off home doesn't flash it through the
                 slide. Decorative; the real buttons live in template.tsx. */}
             {showLegacyGroups && (
-              <span aria-hidden="true" className={HOME_CHROME_SLOT_CLASS} style={{ right: LEGACY_GROUPS_BUTTON_RIGHT }}>
+              <span
+                aria-hidden="true"
+                className={HOME_CHROME_SLOT_CLASS}
+                style={{ right: showExplore ? LEGACY_GROUPS_BUTTON_RIGHT : EXPLORE_BUTTON_RIGHT }}
+              >
                 <LegacyGroupsIcon />
               </span>
             )}

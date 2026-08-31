@@ -186,8 +186,8 @@ export default function FriendProfilePage() {
           )}
           {relationship === "none" && !sentStatus && (
             <p className="text-gray-600 dark:text-gray-300 mb-6">
-              {name} shared this link so you can add them as a friend. They&apos;ll
-              approve your request on their side.
+              {name}{" "}shared this link so you can add them as a friend.
+              They&apos;ll approve your request on their side.
             </p>
           )}
           <div className="mb-8">{actionArea}</div>
@@ -203,7 +203,7 @@ export default function FriendProfilePage() {
           onClick={() => navigateWithTransition(router, "/", "forward")}
           className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
         >
-          Go to {`Whoever Wants`}
+          Go to Whoever Wants
         </button>
       )}
 

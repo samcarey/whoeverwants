@@ -291,7 +291,10 @@ function TemplateInner({ children }: AppTemplateProps) {
                 onClick={() => navigateWithTransition(router, '/groups', 'forward')}
                 {...prefetchOnHover('/groups')}
                 className="absolute top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
-                style={{ right: LEGACY_GROUPS_BUTTON_RIGHT }}
+                // Take the globe's slot unless the explore flag is ALSO on —
+                // the +5rem third slot overlaps the centered title on phones,
+                // so it's only used when both experiments are enabled.
+                style={{ right: showExplore ? LEGACY_GROUPS_BUTTON_RIGHT : EXPLORE_BUTTON_RIGHT }}
                 aria-label="Groups"
               >
                 <LegacyGroupsIcon />
