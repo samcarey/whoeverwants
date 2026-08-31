@@ -48,6 +48,8 @@ import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import CandidatePicker, { candidateKey, type Candidate } from "@/components/CandidatePicker";
+import ContactGroupPreviewModal from "@/components/ContactGroupPreviewModal";
+import { openUserProfileCard } from "@/lib/useUserProfile";
 import PartyCountField from "@/components/PartyCountField";
 import HoursField, { HOURS_OPTIONS } from "@/components/HoursField";
 import ModalPortal from "@/components/ModalPortal";
@@ -373,6 +375,18 @@ export default function NewSlotSheet() {
   // Activity name awaiting delete confirmation (null = no confirm open). Only
   // "you've picked before" suggestions can be deleted (→ blacklisted).
   const [pendingBlacklist, setPendingBlacklist] = useState<string | null>(null);
+  // Tapping a With/Without pill SHOWS the pick: a person opens the shared
+  // profile modal (z-[80], stacks over everything); a group opens a
+  // read-only preview modal (navigating to /contacts mid-edit would lose
+  // the un-committed slot changes). Ref-mirrored for the Escape gate.
+  const [previewGroupId, setPreviewGroupId] = useState<string | null>(null);
+  const previewGroupIdRef = useRef<string | null>(null);
+  previewGroupIdRef.current = previewGroupId;
+  const handlePillTap = (c: Candidate) => {
+    if (!c.id) return;
+    if (c.kind === "groups") setPreviewGroupId(c.id);
+    else openUserProfileCard(c.id, c.name);
+  };
   // The Poll card: its search text + dropdown, and the slide-in submodal
   // editing the attached poll.
   const [pollQuery, setPollQuery] = useState("");
@@ -976,8 +990,9 @@ export default function NewSlotSheet() {
     if (!isOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      // A stacked modal (emoji picker or delete confirm) consumes Escape.
-      if (emojiOpen || pendingBlacklist !== null) return;
+      // A stacked modal (emoji picker, delete confirm, or the group
+      // preview) consumes Escape.
+      if (emojiOpen || pendingBlacklist !== null || previewGroupIdRef.current !== null) return;
       // The poll submodal closes first — Escape peels one layer at a time.
       if (pollSubOpenRef.current) {
         closePollSub();
@@ -1344,6 +1359,7 @@ export default function NewSlotSheet() {
                 onAdd={(c) => toggleEntryRef(c.kind, c)}
                 onRemove={(c) => toggleEntryRef(c.kind, c)}
                 onOpenChange={handlePickerOpenChange}
+                onPillTap={handlePillTap}
               />
               <PartyCountField label="At Least" value={draft.entry.minPeople} setValue={setMinPeople} />
               <PartyCountField
@@ -1360,6 +1376,7 @@ export default function NewSlotSheet() {
                 onAdd={(c) => toggleEntryRef(excludeField(c.kind), c)}
                 onRemove={(c) => toggleEntryRef(excludeField(c.kind), c)}
                 onOpenChange={handlePickerOpenChange}
+                onPillTap={handlePillTap}
               />
             </section>
             )}
@@ -1679,6 +1696,12 @@ export default function NewSlotSheet() {
       {/* Emoji picker for the activity (reuses the poll picker). Renders its
           own z-[80] portal above the sheet; relevance-sorted by the typed
           name. */}
+      {previewGroupId !== null && (
+        <ContactGroupPreviewModal
+          groupId={previewGroupId}
+          onClose={() => setPreviewGroupId(null)}
+        />
+      )}
       <EmojiPickerModal
         open={emojiOpen}
         value={draft.emoji}

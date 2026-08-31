@@ -763,7 +763,9 @@ export default function ContactsPage() {
                                 onAdd={(c) => addGroupPick(group, c)}
                                 onRemove={(c) => removeGroupPick(group, c)}
                                 onPillTap={(c) => {
-                                  if (c.kind === "groups" && c.id) jumpToGroup(c.id);
+                                  if (!c.id) return;
+                                  if (c.kind === "groups") jumpToGroup(c.id);
+                                  else openUserProfileCard(c.id, c.name);
                                 }}
                               />
                             )}
