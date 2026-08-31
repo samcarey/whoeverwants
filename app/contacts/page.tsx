@@ -56,6 +56,7 @@ import InitialBubble from "@/components/InitialBubble";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import SignInModal from "@/components/SignInModal";
 import AccountGateModal from "@/components/AccountGateModal";
+import CandidatePicker, { type Candidate } from "@/components/CandidatePicker";
 
 const CARD_CLASS =
   "rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700";
@@ -205,12 +206,8 @@ export default function ContactsPage() {
     });
   };
 
-  const toggleGroupMember = (group: ContactGroup, userId: string) => {
-    const current = group.members.map((m) => m.user_id);
-    const next = current.includes(userId)
-      ? current.filter((id) => id !== userId)
-      : [...current, userId];
-    // Optimistic local update so the checkbox flips instantly.
+  const setGroupMembers = (group: ContactGroup, next: string[]) => {
+    // Optimistic local update so the picked pill appears/disappears instantly.
     setOverview((prev) => {
       if (!prev) return prev;
       const friendsById = new Map(prev.friends.map((f) => [f.user_id, f]));
@@ -231,6 +228,20 @@ export default function ContactsPage() {
     void runAction(
       () => apiUpdateContactGroup(group.id, { memberIds: next }),
       "Couldn't update the group",
+    );
+  };
+
+  const addGroupMember = (group: ContactGroup, c: Candidate) => {
+    if (!c.id) return;
+    const current = group.members.map((m) => m.user_id);
+    if (current.includes(c.id)) return;
+    setGroupMembers(group, [...current, c.id]);
+  };
+
+  const removeGroupMember = (group: ContactGroup, c: Candidate) => {
+    setGroupMembers(
+      group,
+      group.members.map((m) => m.user_id).filter((id) => id !== c.id),
     );
   };
 
@@ -574,44 +585,37 @@ export default function ContactsPage() {
                           </svg>
                         </button>
                         {expanded && (
-                          <div className="pb-2 pl-1">
-                            {overview.friends.length === 0 && (
+                          <div className="pb-2">
+                            {overview.friends.length === 0 ? (
                               <p className="py-2 text-sm text-gray-500 dark:text-gray-400">
                                 Add friends first — groups are made of your friends.
                               </p>
+                            ) : (
+                              /* The same search-box picker the With/Without
+                                 fields use: type to filter your friends, tap
+                                 to add; picks render as removable pills.
+                                 Options are least-relevant-first (the picker
+                                 reverses), so reverse-alphabetical here puts
+                                 A nearest the box. */
+                              <CandidatePicker
+                                label="Members"
+                                emptyValue="No one yet"
+                                selected={group.members.map((m) => ({
+                                  kind: "people" as const,
+                                  id: m.user_id,
+                                  name: personLabel(m),
+                                }))}
+                                options={[...overview.friends]
+                                  .sort((a, b) => personLabel(b).localeCompare(personLabel(a)))
+                                  .map((f) => ({
+                                    kind: "people" as const,
+                                    id: f.user_id,
+                                    name: personLabel(f),
+                                  }))}
+                                onAdd={(c) => addGroupMember(group, c)}
+                                onRemove={(c) => removeGroupMember(group, c)}
+                              />
                             )}
-                            {overview.friends.map((friend) => {
-                              const isMember = group.members.some(
-                                (m) => m.user_id === friend.user_id,
-                              );
-                              return (
-                                <button
-                                  key={friend.user_id}
-                                  type="button"
-                                  onClick={() => toggleGroupMember(group, friend.user_id)}
-                                  className="w-full flex items-center gap-3 h-10 text-left"
-                                >
-                                  <span
-                                    role="checkbox"
-                                    aria-checked={isMember}
-                                    className={`w-6 h-6 shrink-0 rounded-full border-2 flex items-center justify-center ${
-                                      isMember
-                                        ? "bg-blue-600 border-blue-600"
-                                        : "border-gray-300 dark:border-gray-600"
-                                    }`}
-                                  >
-                                    {isMember && (
-                                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    )}
-                                  </span>
-                                  <span className="flex-1 min-w-0 truncate text-sm text-gray-900 dark:text-gray-100">
-                                    {personLabel(friend)}
-                                  </span>
-                                </button>
-                              );
-                            })}
                             <button
                               type="button"
                               onClick={() => setPendingAction({ kind: "deleteGroup", group })}
