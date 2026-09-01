@@ -195,8 +195,9 @@ function EventCard({
       className={`flex w-full cursor-pointer items-center rounded-2xl border py-1.5 px-2.5 text-[12.5px] leading-tight transition-colors active:opacity-80 ${cardCls}`}
     >
       <div className="min-w-0 flex-1 flex flex-col gap-1">
-        {/* Line 1 — the title gives way first: it truncates so the "@ time"
-            (shrink-0) is always readable rather than being pushed off. */}
+        {/* Line 1 — the "@ time" is pinned to the card's right edge (ml-auto,
+            shrink-0) so times line up down the stack; the title takes the rest
+            and gives way first, truncating where it would run into the time. */}
         <span className="flex items-baseline min-w-0">
           {/* min-w-0 as well as truncate: without it the nowrap title still
               reports its full width as min-content and drags the whole column
@@ -205,7 +206,9 @@ function EventCard({
             {ev.emoji ? `${ev.emoji} ` : ""}
             {ev.activity}
           </span>
-          {ev.time && <span className={`${timeCls} shrink-0`}>&nbsp;@ {fmtClock(ev.time)}</span>}
+          {ev.time && (
+            <span className={`${timeCls} ml-auto shrink-0 pl-1.5`}>@ {fmtClock(ev.time)}</span>
+          )}
         </span>
         {/* Line 2 — discs from the left, status pill pinned bottom-right. The
             discs take whatever the pill leaves and collapse to "+X" at the
