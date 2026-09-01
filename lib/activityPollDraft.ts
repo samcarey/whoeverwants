@@ -28,7 +28,11 @@ import {
 import { getBuiltInType } from "@/components/TypeFieldInput";
 import type { PlannedRow } from "@/lib/pollSuggestions";
 import { planPollSuggestions } from "@/lib/pollSuggestions";
-import type { ActivityPollDraft, ActivityPollQuestion } from "@/lib/api/slots";
+import type {
+  ActivityPollDraft,
+  ActivityPollOptions,
+  ActivityPollQuestion,
+} from "@/lib/api/slots";
 
 export type { TitleSegment } from "@/app/create-poll/createPollHelpers";
 
@@ -53,8 +57,9 @@ function toQuestionDraft(e: ActivityPollEdit): QuestionDraft {
     forField: e.forField,
     options: e.options.length > 0 ? e.options : [""],
     categoryIcon: e.categoryIcon,
-    // Fixed options only — an attached poll is prephase-free (the server
-    // starts it with no suggestion/availability deadline).
+    // The draft always spells out its options — whether they end up as the
+    // ballot or as the seed for a suggestion phase is the activity's poll
+    // OPTIONS to decide, at start time, server-side.
     collectSuggestions: false,
   };
 }
@@ -182,4 +187,123 @@ export function pollSuggestionRows(query: string): PollSuggestionRow[] {
     });
   }
   return rows.reverse();
+}
+
+// ---------------------------------------------------------------------------
+// Poll OPTIONS — the settings every poll an activity starts inherits
+// ---------------------------------------------------------------------------
+
+/** Lead times both the deadline and the suggestions cutoff are drawn from.
+ *  MIRRORED server-side in services/slots.POLL_LEAD_MINUTES — the two
+ *  whitelists must stay in lockstep or a saved value silently falls back to
+ *  its default. */
+export const POLL_LEAD_OPTIONS = [
+  { value: "1h", label: "1 hour" },
+  { value: "2h", label: "2 hours" },
+  { value: "8h", label: "8 hours" },
+  { value: "1d", label: "1 day" },
+  { value: "2d", label: "2 days" },
+  { value: "4d", label: "4 days" },
+] as const;
+
+/** When voting closes: at the event, or that far before it. */
+export const POLL_DEADLINE_OPTIONS: { value: string; label: string }[] = [
+  { value: "event_start", label: "Event start" },
+  ...POLL_LEAD_OPTIONS.map((o) => ({ value: o.value, label: `${o.label} before event` })),
+];
+
+/** When the suggestion phase closes — measured off the voting deadline or off
+ *  the event itself, or no suggestions at all. */
+export const POLL_SUGGESTION_OPTIONS: { value: string; label: string }[] = [
+  { value: "none", label: "Do not allow" },
+  ...POLL_LEAD_OPTIONS.map((o) => ({
+    value: `deadline:${o.value}`,
+    label: `${o.label} before deadline`,
+  })),
+  ...POLL_LEAD_OPTIONS.map((o) => ({
+    value: `event:${o.value}`,
+    label: `${o.label} before event`,
+  })),
+];
+
+export const DEFAULT_POLL_OPTIONS: ActivityPollOptions = {
+  deadline: "event_start",
+  suggestions: "none",
+  winner_method: "consensus",
+};
+
+function labelIn(list: { value: string; label: string }[], value: string, fallback: string): string {
+  return list.find((o) => o.value === value)?.label ?? fallback;
+}
+
+export function pollDeadlineLabel(o: ActivityPollOptions): string {
+  return labelIn(POLL_DEADLINE_OPTIONS, o.deadline, "Event start");
+}
+
+export function pollSuggestionsLabel(o: ActivityPollOptions): string {
+  return labelIn(POLL_SUGGESTION_OPTIONS, o.suggestions, "Do not allow");
+}
+
+/** A stored blob → editable options, defaulting each field independently (the
+ *  server sanitizer does the same, so an unknown value reads the same on both
+ *  sides). */
+export function pollOptionsFromWire(o: ActivityPollOptions | null | undefined): ActivityPollOptions {
+  if (!o) return { ...DEFAULT_POLL_OPTIONS };
+  return {
+    deadline: POLL_DEADLINE_OPTIONS.some((d) => d.value === o.deadline)
+      ? o.deadline
+      : DEFAULT_POLL_OPTIONS.deadline,
+    suggestions: POLL_SUGGESTION_OPTIONS.some((s) => s.value === o.suggestions)
+      ? o.suggestions
+      : DEFAULT_POLL_OPTIONS.suggestions,
+    winner_method: o.winner_method === "favorite" ? "favorite" : "consensus",
+    timezone: o.timezone ?? null,
+  };
+}
+
+/** Editable options → the stored blob, stamped with the zone the lead times
+ *  are read in. The event's day + start time are wall clock with no zone, so
+ *  without this the server can't turn "2 hours before the event" into an
+ *  instant and starts the poll deadline-free. */
+export function pollOptionsToWire(o: ActivityPollOptions): ActivityPollOptions {
+  let tz: string | null = o.timezone ?? null;
+  try {
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz;
+  } catch {
+    // Keep whatever the activity already carried.
+  }
+  return { ...o, timezone: tz };
+}
+
+/** True when the chosen suggestion cutoff would land at/after voting closes —
+ *  the server clamps it to just before the deadline, and the editor says so
+ *  rather than letting the pair read as a contradiction. Only decidable when
+ *  both are measured from the same anchor (the event). */
+export function pollSuggestionsAfterDeadline(o: ActivityPollOptions): boolean {
+  if (o.suggestions === "none") return false;
+  const [base, lead] = o.suggestions.split(":");
+  if (base !== "event") return false;
+  const minutes = (v: string) =>
+    ({ "1h": 60, "2h": 120, "8h": 480, "1d": 1440, "2d": 2880, "4d": 5760 })[v] ?? 0;
+  const deadlineLead = o.deadline === "event_start" ? 0 : minutes(o.deadline);
+  return minutes(lead) <= deadlineLead;
+}
+
+/** Plain-language recap of what the options do, for the editor's footer —
+ *  the settings are lead times off an event that hasn't been scheduled yet,
+ *  so spelling out the consequence beats reading two dropdowns. */
+export function pollOptionsSummary(o: ActivityPollOptions): string[] {
+  const lines = [
+    o.deadline === "event_start"
+      ? "Voting closes when the event starts."
+      : `Voting closes ${pollDeadlineLabel(o).toLowerCase()}.`,
+  ];
+  if (o.suggestions === "none") {
+    lines.push("Options are fixed — voters can't add their own.");
+  } else if (pollSuggestionsAfterDeadline(o)) {
+    lines.push("Suggestions would close after voting does, so they close with it.");
+  } else {
+    lines.push(`Anyone can add options until ${pollSuggestionsLabel(o).toLowerCase()}.`);
+  }
+  return lines;
 }

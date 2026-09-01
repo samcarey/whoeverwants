@@ -66,9 +66,12 @@ candidates (bitmask, capped at MAX_SEARCH_CANDIDATES) — candidate sets are
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from services.slots import _hhmm_to_minutes, _windows_by_day, normalize_activity
+
+logger = logging.getLogger(__name__)
 
 # Beyond this many viewer-compatible candidates the exists-a-viable-subset
 # search stops being cheap (2^n subsets); extras beyond the cap are dropped
@@ -1168,7 +1171,8 @@ def _load_poll_drafts(conn, days: list[str]) -> dict[tuple[str, str], list[dict]
         return {}
     rows = conn.execute(
         """
-        SELECT s.user_id, s.day_time_windows, sa.activity, sa.poll_draft, sa.created_at
+        SELECT s.user_id, s.day_time_windows, sa.activity, sa.poll_draft,
+               sa.poll_options, sa.created_at
           FROM slots s
           JOIN slot_activities sa ON sa.slot_id = s.id
          WHERE sa.poll_draft IS NOT NULL
@@ -1193,6 +1197,10 @@ def _load_poll_drafts(conn, days: list[str]) -> dict[tuple[str, str], list[dict]
                 {
                     "user_id": str(r["user_id"]),
                     "draft": r["poll_draft"],
+                    # The activity's poll OPTIONS (migration 161) — deadline /
+                    # suggestion cutoff / winner method, applied to whatever
+                    # poll this draft starts. None = pre-161 behavior.
+                    "options": r["poll_options"] if isinstance(r["poll_options"], dict) else None,
                     "created_at": r["created_at"],
                 }
             )
@@ -1201,15 +1209,100 @@ def _load_poll_drafts(conn, days: list[str]) -> dict[tuple[str, str], list[dict]
     return out
 
 
-def _create_event_poll(conn, day: str, activity_display: str, cands: dict[str, _Candidate], draft_row: dict) -> str | None:
+def _event_start_utc(day: str, start_min: int, tz_name: str):
+    """The event's wall-clock start (day + minutes) as an instant, read in the
+    attacher's zone. None when the zone is unknown to this host."""
+    from datetime import datetime, timedelta  # noqa: PLC0415
+    from zoneinfo import ZoneInfo  # noqa: PLC0415
+
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:  # noqa: BLE001 — unknown/garbage zone → no deadlines
+        return None
+    try:
+        base = datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        return None
+    from datetime import timezone  # noqa: PLC0415
+
+    return (base + timedelta(minutes=start_min)).replace(tzinfo=tz).astimezone(timezone.utc)
+
+
+def _event_poll_deadlines(day: str, start_min: int | None, options: dict | None, now):
+    """(response_deadline, prephase_deadline) for a poll about to start on this
+    event, both UTC or None.
+
+    The activity's options express both as LEAD TIMES off the event start, so
+    turning them into instants needs a zone — the attacher's, captured by the
+    browser when they saved (slot times are wall clock with no zone, so
+    there's no other honest anchor). No options, no zone, or a zone this host
+    doesn't know → (None, None), i.e. the pre-161 "no deadline" behavior.
+
+    Both are dropped when they'd already be past: a poll born closed, or one
+    whose suggestion phase ended before it opened, is worse than one without
+    the phase at all."""
+    from datetime import timedelta  # noqa: PLC0415
+
+    from services.slots import DEFAULT_POLL_OPTIONS, POLL_LEAD_MINUTES  # noqa: PLC0415
+
+    if not isinstance(options, dict) or start_min is None:
+        return (None, None)
+    tz_name = options.get("timezone")
+    if not isinstance(tz_name, str) or not tz_name:
+        return (None, None)
+    start = _event_start_utc(day, start_min, tz_name)
+    if start is None:
+        return (None, None)
+
+    choice = options.get("deadline") or DEFAULT_POLL_OPTIONS["deadline"]
+    if choice == "event_start":
+        deadline = start
+    else:
+        lead = POLL_LEAD_MINUTES.get(choice)
+        deadline = start - timedelta(minutes=lead) if lead else start
+    if deadline <= now:
+        deadline = None
+
+    prephase = None
+    cutoff = options.get("suggestions") or "none"
+    if cutoff != "none":
+        base_key, _, lead_key = cutoff.partition(":")
+        lead = POLL_LEAD_MINUTES.get(lead_key)
+        # "before deadline" with no surviving deadline falls back to the event
+        # start — the only anchor left.
+        anchor = deadline if (base_key == "deadline" and deadline) else start
+        if lead:
+            prephase = anchor - timedelta(minutes=lead)
+        # Suggestions can't outlast voting (mirrors _insert_poll's own cap for
+        # the relative-minutes form).
+        if prephase and deadline and prephase >= deadline:
+            prephase = deadline - timedelta(minutes=1)
+        if prephase and prephase <= now:
+            prephase = None
+    return (deadline, prephase)
+
+
+def _create_event_poll(
+    conn,
+    day: str,
+    activity_display: str,
+    cands: dict[str, _Candidate],
+    draft_row: dict,
+    start_min: int | None = None,
+) -> str | None:
     """Create a REAL poll from an activity's attached draft and link it to the
     (day, activity) key. Reuses the create endpoint's insert helpers (lazy
     import, the recurrence-materializer pattern): the poll lands in a fresh
-    PUBLIC group (no signed-in group creator), owned by the draft's attacher,
-    with no voting deadline (the event card's timer counts to the EVENT start
-    instead — slot times are wall-clock with no timezone, so a server-side
-    deadline would be a lie somewhere). Every current candidate of the key is
-    added as a group member so the poll is on their home list and votable."""
+    PUBLIC group (no signed-in group creator), owned by the draft's attacher.
+    Every current candidate of the key is added as a group member so the poll
+    is on their home list and votable.
+
+    The activity's poll OPTIONS (migration 161) shape it: when voting closes,
+    whether a ranked choice collects options from the group first (then the
+    draft's own options ride along as the attacher's seed suggestions, exactly
+    as create-poll's `initial_suggestions` does), and the winner method. With
+    no usable options the poll starts deadline-free — the pre-161 behavior,
+    where the event card's timer to the event start is the only clock."""
     from datetime import datetime, timezone  # noqa: PLC0415
 
     from models import CreatePollRequest, CreateQuestionRequest  # noqa: PLC0415
@@ -1225,19 +1318,34 @@ def _create_event_poll(conn, day: str, activity_display: str, cands: dict[str, _
     owner = cands.get(owner_id)
     creator_name = (owner.name if owner else None) or "Someone"
     title = (d.get("title") or "").strip() or (q.get("context") or "").strip() or "Poll"
+    now = datetime.now(timezone.utc)
+    options = draft_row.get("options")
+    deadline, prephase = _event_poll_deadlines(day, start_min, options, now)
+    # A suggestion phase only means something for a ranked choice (a yes/no
+    # has nothing to collect). The draft's own options become the seed.
+    draft_options = [o for o in (q.get("options") or []) if isinstance(o, str) and o.strip()]
+    collecting = prephase is not None and qtype == "ranked_choice"
+    winner = (options or {}).get("winner_method") or q.get("winner_method")
     sub = CreateQuestionRequest(
         question_type=qtype,
         category=q.get("category"),
         category_icon=q.get("category_icon"),
-        options=q.get("options"),
+        # Suggestion mode opens option-less and finalizes at the cutoff.
+        options=None if collecting else q.get("options"),
         context=q.get("context"),
-        winner_method=q.get("winner_method") or ("consensus" if qtype == "ranked_choice" else "favorite"),
+        winner_method=winner or ("consensus" if qtype == "ranked_choice" else "favorite"),
         is_auto_title=bool(q.get("is_auto_title", qtype != "yes_no")),
+        # The per-question "this one has a prephase" signal the FE reads; the
+        # wrapper's absolute prephase_deadline is what actually gates.
+        suggestion_deadline_minutes=(
+            max(1, int((prephase - now).total_seconds() // 60)) if collecting else None
+        ),
+        initial_suggestions=draft_options if collecting else None,
     )
-    now = datetime.now(timezone.utc)
     req = CreatePollRequest(
         creator_name=creator_name,
-        response_deadline=None,
+        response_deadline=deadline.isoformat() if deadline else None,
+        prephase_deadline=prephase.isoformat() if collecting else None,
         group_id=None,
         questions=[sub],
     )
@@ -1246,7 +1354,32 @@ def _create_event_poll(conn, day: str, activity_display: str, cands: dict[str, _
         creator_user_id=owner_id,
         group_creator_user_id=None,
     )
-    _insert_question(conn, poll_row, req, sub, 0, title, now)
+    question_row = _insert_question(conn, poll_row, req, sub, 0, title, now)
+    if collecting and draft_options:
+        # Seed the attacher's picks as their own suggestion-phase vote, so the
+        # poll opens collecting but already carrying what they typed (the
+        # create endpoint's initial_suggestions path). Best-effort: a rejected
+        # seed shouldn't cost the group its poll.
+        from models import SubmitVoteRequest  # noqa: PLC0415
+        from services.questions import _submit_vote_to_question  # noqa: PLC0415
+
+        try:
+            # SAVEPOINT: a failed insert would otherwise poison the enclosing
+            # transaction and take the link INSERT below down with it.
+            with conn.transaction():
+                _submit_vote_to_question(
+                    conn,
+                    str(question_row["id"]),
+                    SubmitVoteRequest(
+                        vote_type="ranked_choice",
+                        suggestions=draft_options,
+                        is_ranking_abstain=True,
+                        voter_name=creator_name,
+                    ),
+                    now,
+                )
+        except Exception:  # noqa: BLE001
+            logger.warning("event poll: seeding initial suggestions failed", exc_info=True)
     inserted = conn.execute(
         """
         INSERT INTO slot_event_polls (day, activity, poll_id, title)
@@ -1299,9 +1432,12 @@ def start_due_event_polls(conn, *, user_id: str | None, days: list[str]) -> list
             if owner is None:
                 continue
             pool = [c for c in cands.values() if c.user_id != owner.user_id]
-            if _preferred_viable_start(owner, pool, members, blocked) is None:
+            # The same start the fresh card would propose — and the anchor the
+            # poll's deadline / suggestion cutoff are measured back from.
+            start_min = _preferred_viable_start(owner, pool, members, blocked)
+            if start_min is None:
                 continue
-            pid = _create_event_poll(conn, day, owner.display or key, cands, row)
+            pid = _create_event_poll(conn, day, owner.display or key, cands, row, start_min)
             if pid:
                 created.append(pid)
             break

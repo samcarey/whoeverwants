@@ -77,6 +77,20 @@ export interface ActivityPollDraft {
   question: ActivityPollQuestion;
 }
 
+/** Settings EVERY poll an activity starts inherits (migration 161) — kept
+ *  beside the draft, not inside it, so they survive detaching/reattaching a
+ *  poll. `deadline` and `suggestions` are LEAD TIMES off the event start
+ *  ("event_start" | "2h" | "1d"…, and "none" | "deadline:2h" | "event:1d");
+ *  `timezone` is the attacher's IANA zone, captured at save time — without it
+ *  the server can't turn a wall-clock event time into an instant and starts
+ *  the poll deadline-free. See lib/activityPollDraft for the catalogs. */
+export interface ActivityPollOptions {
+  deadline: string;
+  suggestions: string;
+  winner_method: "favorite" | "consensus";
+  timezone?: string | null;
+}
+
 export interface SlotActivity extends ActivitySuggestion {
   min_people?: number | null;
   max_people?: number | null;
@@ -93,6 +107,9 @@ export interface SlotActivity extends ActivitySuggestion {
   max_hours?: number | null;
   /** Optional attached poll (see ActivityPollDraft); null = none. */
   poll_draft?: ActivityPollDraft | null;
+  /** Poll settings for the activity (see ActivityPollOptions); null = the
+   *  pre-161 defaults (no deadline, no suggestion phase). */
+  poll_options?: ActivityPollOptions | null;
 }
 
 export interface ActivitySuggestions {

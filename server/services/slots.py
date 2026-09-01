@@ -55,11 +55,28 @@ MAX_POLL_TITLE_CHARS = 120
 MAX_POLL_CONTEXT_CHARS = 200
 MAX_POLL_OPTION_CHARS = 200
 MAX_POLL_OPTIONS = 30
-# The kinds an attached poll can be in v1: a yes/no question or a
-# fixed-options ranked choice. Both are prephase-free, so the started poll
-# needs no suggestion/availability deadline (whose wall-clock-vs-timezone
-# math slots deliberately avoid).
+# The kinds an attached poll can be in v1: a yes/no question or a ranked
+# choice (fixed options, or — when the activity's poll options ask for a
+# suggestion phase — options collected from the group first).
 POLL_DRAFT_TYPES = {"yes_no", "ranked_choice"}
+# Lead times the activity's poll options can express, off the event start
+# (deadline) or off the event/deadline (suggestions cutoff). MIRRORED on the
+# FE in lib/activityPollDraft.ts — keep the two in lockstep.
+POLL_LEAD_MINUTES = {"1h": 60, "2h": 120, "8h": 480, "1d": 1440, "2d": 2880, "4d": 5760}
+# Voting closes at the event's start, or that many minutes before it.
+POLL_DEADLINE_CHOICES = {"event_start", *POLL_LEAD_MINUTES}
+# What a suggestion cutoff is measured from ("deadline:2h" = 2h before voting
+# closes, "event:1d" = a day before the event); "none" = no suggestion phase.
+POLL_SUGGESTION_BASES = {"deadline", "event"}
+POLL_WINNER_METHODS = {"favorite", "consensus"}
+# Defaults for an activity saved before migration 161 / by a raw-API caller:
+# the pre-161 behavior (no deadline, no suggestions). A NEW activity saved by
+# the FE always carries explicit options.
+DEFAULT_POLL_OPTIONS = {
+    "deadline": "event_start",
+    "suggestions": "none",
+    "winner_method": "consensus",
+}
 # What an unnamed group (no title override, no named participants yet) reads as
 # in the who-with picker. Mirrors the FE's `EMPTY_GROUP_TITLE`.
 UNNAMED_GROUP_LABEL = "New Group"
@@ -310,6 +327,48 @@ def _clean_poll_draft(value) -> dict | None:
     }
 
 
+def _clean_poll_options(value) -> dict | None:
+    """Sanitize an activity's poll OPTIONS (migration 161) — the settings every
+    poll it starts inherits. Each field falls back to its default rather than
+    rejecting the blob, mirroring `_clean_poll_draft`'s never-400 stance; the
+    whole thing drops to None only when there's nothing usable, so the column
+    stays NULL for callers that don't send it (pre-161 behavior).
+
+    `timezone` is stored verbatim as a string here — `slot_events` is what
+    resolves it (and treats an unknown zone as "no deadlines"), so this layer
+    doesn't need zoneinfo."""
+    if not isinstance(value, dict):
+        return None
+    deadline = value.get("deadline")
+    if deadline not in POLL_DEADLINE_CHOICES:
+        deadline = DEFAULT_POLL_OPTIONS["deadline"]
+    suggestions = value.get("suggestions")
+    if not _valid_suggestion_cutoff(suggestions):
+        suggestions = DEFAULT_POLL_OPTIONS["suggestions"]
+    winner = value.get("winner_method")
+    if winner not in POLL_WINNER_METHODS:
+        winner = DEFAULT_POLL_OPTIONS["winner_method"]
+    tz = value.get("timezone")
+    # A zone name is opaque here; bound it so a hostile caller can't park a
+    # novel in the column.
+    tz = truncate_text(tz, 64) if isinstance(tz, str) else None
+    out = {"deadline": deadline, "suggestions": suggestions, "winner_method": winner}
+    if tz:
+        out["timezone"] = tz
+    return out
+
+
+def _valid_suggestion_cutoff(value) -> bool:
+    """"none", or "<base>:<lead>" with a known base + lead (see the module
+    constants)."""
+    if value == "none":
+        return True
+    if not isinstance(value, str) or ":" not in value:
+        return False
+    base, _, lead = value.partition(":")
+    return base in POLL_SUGGESTION_BASES and lead in POLL_LEAD_MINUTES
+
+
 def _member_group_names(conn, user_id: str) -> dict[str, str]:
     """{group_id: display name} for every group the account is a member of.
 
@@ -442,13 +501,14 @@ def _insert_slot_activities(conn, slot_id: str, activities, *, user_id: str) -> 
         if min_hours is not None and max_hours is not None and max_hours < min_hours:
             max_hours = min_hours
         poll_draft = _clean_poll_draft(raw.get("poll_draft"))
+        poll_options = _clean_poll_options(raw.get("poll_options"))
         conn.execute(
             """
             INSERT INTO slot_activities
                 (slot_id, activity, emoji, min_people, max_people, who_with, time_prefs,
-                 min_hours, max_hours, poll_draft)
+                 min_hours, max_hours, poll_draft, poll_options)
             VALUES (%(s)s::uuid, %(a)s, %(e)s, %(mn)s, %(mx)s, %(ww)s::jsonb, %(tp)s::jsonb,
-                    %(mnh)s, %(mxh)s, %(pd)s::jsonb)
+                    %(mnh)s, %(mxh)s, %(pd)s::jsonb, %(po)s::jsonb)
             """,
             {
                 "s": slot_id,
@@ -461,6 +521,7 @@ def _insert_slot_activities(conn, slot_id: str, activities, *, user_id: str) -> 
                 "mnh": min_hours,
                 "mxh": max_hours,
                 "pd": json.dumps(poll_draft) if poll_draft else None,
+                "po": json.dumps(poll_options) if poll_options else None,
             },
         )
 
@@ -551,7 +612,7 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
         arows = conn.execute(
             """
             SELECT slot_id, activity, emoji, min_people, max_people, who_with, time_prefs,
-                   min_hours, max_hours, poll_draft
+                   min_hours, max_hours, poll_draft, poll_options
               FROM slot_activities
              WHERE slot_id = ANY(%(ids)s::uuid[])
              ORDER BY created_at
@@ -571,6 +632,7 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
                     "min_hours": float(a["min_hours"]) if a["min_hours"] is not None else None,
                     "max_hours": float(a["max_hours"]) if a["max_hours"] is not None else None,
                     "poll_draft": a["poll_draft"] or None,
+                    "poll_options": a["poll_options"] or None,
                 }
             )
     return [

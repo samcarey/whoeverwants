@@ -52,6 +52,8 @@ import CandidatePicker, { candidateKey, type Candidate } from "@/components/Cand
 import ContactGroupPreviewModal from "@/components/ContactGroupPreviewModal";
 import { openUserProfileCard } from "@/lib/useUserProfile";
 import PartyCountField from "@/components/PartyCountField";
+import ScoringAlgorithmField from "@/components/ScoringAlgorithmField";
+import SelectRow from "@/components/SelectRow";
 import HoursField, { HOURS_OPTIONS } from "@/components/HoursField";
 import ModalPortal from "@/components/ModalPortal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
@@ -73,18 +75,25 @@ import {
   type ActivitySuggestions,
   type Slot,
   type SlotActivity,
+  type ActivityPollOptions,
   type SlotEvent,
   type WhoWithEntry,
   type WhoWithRef,
 } from "@/lib/api/slots";
 import { apiAddActivityBlacklist } from "@/lib/api/users";
 import {
+  DEFAULT_POLL_OPTIONS,
+  POLL_DEADLINE_OPTIONS,
+  POLL_SUGGESTION_OPTIONS,
   pollEditCategoryLabel,
   pollEditFromWire,
   pollEditIcon,
   pollEditTitleSegments,
   pollEditToWire,
   pollEditValid,
+  pollOptionsFromWire,
+  pollOptionsSummary,
+  pollOptionsToWire,
   pollSuggestionRows,
   type ActivityPollEdit,
   type TitleSegment,
@@ -137,8 +146,11 @@ interface ActivityDraft {
   disliked: string[];
   minHours: number;
   maxHours: number;
-  /** The attached poll (the Poll card / its submodal); null = none. */
+  /** The attached poll (the Polls card / its submodal); null = none. */
   poll: ActivityPollEdit | null;
+  /** Settings every poll this activity starts inherits (the Options
+   *  submodal): deadline, suggestion cutoff, winner method. */
+  pollOptions: ActivityPollOptions;
 }
 
 /** The weakest bounds on offer — what a fresh activity (or a legacy one with
@@ -156,6 +168,7 @@ const EMPTY_DRAFT: ActivityDraft = {
   minHours: DEFAULT_MIN_HOURS,
   maxHours: DEFAULT_MAX_HOURS,
   poll: null,
+  pollOptions: { ...DEFAULT_POLL_OPTIONS },
 };
 
 // ---- Attached-poll submodal (slides in over the sheet, swipe-right to go
@@ -394,12 +407,15 @@ export default function NewSlotSheet() {
   // editing the attached poll.
   const [pollQuery, setPollQuery] = useState("");
   const [pollSuggestOpen, setPollSuggestOpen] = useState(false);
-  const [pollSubOpen, setPollSubOpen] = useState(false);
+  // Which sub-panel is sliding over the sheet: the poll's own editor, or the
+  // activity's poll OPTIONS (deadline / suggestions / winner method). Both
+  // ride the same panel ref, transition and swipe-back handlers.
+  const [pollSub, setPollSub] = useState<"poll" | "options" | null>(null);
   const [pollSubSlideIn, setPollSubSlideIn] = useState(false);
   const pollSubOpenRef = useRef(false);
   useEffect(() => {
-    pollSubOpenRef.current = pollSubOpen;
-  }, [pollSubOpen]);
+    pollSubOpenRef.current = pollSub !== null;
+  }, [pollSub]);
   const pollPanelRef = useRef<HTMLDivElement | null>(null);
   const pollSwipeRef = useRef<{
     startX: number;
@@ -521,12 +537,13 @@ export default function NewSlotSheet() {
               minHours: existing.min_hours ?? DEFAULT_MIN_HOURS,
               maxHours: existing.max_hours ?? DEFAULT_MAX_HOURS,
               poll: existing.poll_draft ? pollEditFromWire(existing.poll_draft) : null,
+              pollOptions: pollOptionsFromWire(existing.poll_options),
             }
           : EMPTY_DRAFT,
       );
       setPollQuery("");
       setPollSuggestOpen(false);
-      setPollSubOpen(false);
+      setPollSub(null);
       setPollSubSlideIn(false);
       setEmojiOpen(false);
       setSuggestOpen(detail?.mode === "activity" && (detail?.activityIndex ?? null) === null);
@@ -658,9 +675,17 @@ export default function NewSlotSheet() {
 
   // ---- Attached poll: submodal open/close + live edits -------------------
 
+  // Mount a sub-panel and slide it in. DOUBLE rAF so the translateX(100%)
+  // enter frame paints before the transition to 0 (the slide-overlay /
+  // create-poll trap).
+  const slideInPollSub = useCallback((panel: "poll" | "options") => {
+    setPollSub(panel);
+    setPollSubSlideIn(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => setPollSubSlideIn(true)));
+  }, []);
+
   // Open the poll submodal on an edit state (a tapped suggestion row, or the
-  // already-attached poll). DOUBLE rAF so the translateX(100%) enter frame
-  // paints before the transition to 0 (the slide-overlay/create-poll trap).
+  // already-attached poll).
   const openPollSub = useCallback((edit: ActivityPollEdit) => {
     // A fresh options-poll opens with two empty rows ready to type into
     // (two is the minimum a poll needs).
@@ -671,14 +696,17 @@ export default function NewSlotSheet() {
     setDraft((prev) => ({ ...prev, poll: seeded }));
     setPollQuery("");
     setPollSuggestOpen(false);
-    setPollSubOpen(true);
-    setPollSubSlideIn(false);
-    requestAnimationFrame(() => requestAnimationFrame(() => setPollSubSlideIn(true)));
-  }, []);
+    slideInPollSub("poll");
+  }, [slideInPollSub]);
+  // The activity's poll OPTIONS — same panel, same gesture, different body.
+  const openPollOptionsSub = useCallback(() => {
+    setPollSuggestOpen(false);
+    slideInPollSub("options");
+  }, [slideInPollSub]);
   // Slide out, THEN unmount — the panel stays visible through the exit.
   const closePollSub = useCallback(() => {
     setPollSubSlideIn(false);
-    window.setTimeout(() => setPollSubOpen(false), POLL_SUB_SLIDE_MS);
+    window.setTimeout(() => setPollSub(null), POLL_SUB_SLIDE_MS);
   }, []);
   const closePollSubRef = useRef(closePollSub);
   useEffect(() => {
@@ -709,6 +737,9 @@ export default function NewSlotSheet() {
   }, []);
   const detachPoll = useCallback(() => {
     setDraft((prev) => ({ ...prev, poll: null }));
+  }, []);
+  const patchPollOptions = useCallback((patch: Partial<ActivityPollOptions>) => {
+    setDraft((prev) => ({ ...prev, pollOptions: { ...prev.pollOptions, ...patch } }));
   }, []);
 
   // Rightward swipe on the submodal = back (same thresholds/feel as the
@@ -800,6 +831,11 @@ export default function NewSlotSheet() {
         // An incomplete poll (e.g. a category picked but <2 options) converts
         // to null — the card warns about this before it's lost.
         poll_draft: d.poll ? pollEditToWire(d.poll) : null,
+        // Saved whether or not a poll is attached: they're the activity's
+        // rules, and they outlive any one draft. The wire form stamps the
+        // browser's zone — what makes "2 hours before the event" computable
+        // from a wall-clock slot time (see lib/activityPollDraft).
+        poll_options: pollOptionsToWire(d.pollOptions),
       };
       let base: SlotActivity[];
       if (activityIndex !== null) {
@@ -1420,9 +1456,24 @@ export default function NewSlotSheet() {
                 the event card + page. */}
             {!isNewActivity && (
             <div>
-              <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
-                Poll
-              </label>
+              {/* Header line: the card's label, and the settings that apply to
+                  EVERY poll this activity starts (their own sub-panel, since
+                  they're rules rather than content). */}
+              <div className="mb-1 px-1 flex items-center justify-between gap-3">
+                <span className="text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
+                  Polls
+                </span>
+                <button
+                  type="button"
+                  onClick={openPollOptionsSub}
+                  className="shrink-0 flex items-center gap-0.5 text-[17.5px] font-medium text-blue-600 dark:text-blue-400 active:opacity-70"
+                >
+                  Options
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
               <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
                 {draft.poll ? (
                   <>
@@ -1580,7 +1631,7 @@ export default function NewSlotSheet() {
               rightward swipe goes back; edits apply live, so back never
               discards. Inside the sheet's overflow-hidden box, so it clips
               cleanly at the rounded corners. */}
-          {pollSubOpen && draft.poll && (
+          {pollSub !== null && (pollSub === "options" || draft.poll) && (
             <div
               ref={pollPanelRef}
               onTouchStart={handlePollSubTouchStart}
@@ -1594,7 +1645,7 @@ export default function NewSlotSheet() {
               }}
               role="dialog"
               aria-modal="true"
-              aria-label="Edit poll"
+              aria-label={pollSub === "options" ? "Poll options" : "Edit poll"}
             >
               <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
                 <button
@@ -1607,9 +1658,55 @@ export default function NewSlotSheet() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
-                <span className="text-lg font-semibold select-none">Poll</span>
+                <span className="text-lg font-semibold select-none">
+                  {pollSub === "options" ? "Poll Options" : "Poll"}
+                </span>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-none px-3 pb-6 space-y-[14.4px]">
+                {pollSub === "options" ? (
+                  <>
+                    <p className="px-1 text-sm text-gray-500 dark:text-gray-400">
+                      Applies to every poll this activity starts.
+                    </p>
+                    <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+                      <SelectRow
+                        label="Deadline"
+                        ariaLabel="When voting closes"
+                        value={draft.pollOptions.deadline}
+                        options={POLL_DEADLINE_OPTIONS}
+                        onChange={(v) => patchPollOptions({ deadline: v })}
+                      />
+                      <SelectRow
+                        label="Suggestions"
+                        ariaLabel="When suggestions close"
+                        value={draft.pollOptions.suggestions}
+                        options={POLL_SUGGESTION_OPTIONS}
+                        onChange={(v) => patchPollOptions({ suggestions: v })}
+                      />
+                      <ScoringAlgorithmField
+                        value={draft.pollOptions.winner_method}
+                        setValue={(v) => patchPollOptions({ winner_method: v })}
+                      />
+                    </section>
+                    {/* The settings are lead times off an event that doesn't
+                        exist yet — say what they'll actually do. */}
+                    <div className="px-1 space-y-1">
+                      {pollOptionsSummary(draft.pollOptions).map((line) => (
+                        <p key={line} className="text-xs text-gray-500 dark:text-gray-400">
+                          {line}
+                        </p>
+                      ))}
+                      {draft.poll?.category === "yes_no" &&
+                        draft.pollOptions.suggestions !== "none" && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">
+                            The attached poll is a yes/no — there's nothing to suggest.
+                            Suggestions apply to polls with options.
+                          </p>
+                        )}
+                    </div>
+                  </>
+                ) : draft.poll ? (
+                  <>
                 {/* Live title preview — what the started poll will be named
                     (the create-poll blue mono title convention). */}
                 <div
@@ -1715,6 +1812,8 @@ export default function NewSlotSheet() {
                     Remove poll
                   </button>
                 </div>
+                  </>
+                ) : null}
               </div>
             </div>
           )}

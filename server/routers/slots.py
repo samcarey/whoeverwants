@@ -153,6 +153,12 @@ class ActivityInput(BaseModel):
     # Sanitized (whitelisted question fields, bounded strings; unusable drafts
     # silently dropped) in services.slots._clean_poll_draft.
     poll_draft: dict | None = None
+    # Settings EVERY poll this activity starts inherits (migration 161):
+    # {"deadline", "suggestions", "winner_method", "timezone"} — when voting
+    # closes relative to the event, whether options are collected first, and
+    # how a ranked choice picks its winner. Sanitized field-by-field (each
+    # falls back to its default) in services.slots._clean_poll_options.
+    poll_options: dict | None = None
 
 
 class CreateSlotRequest(BaseModel):
@@ -183,6 +189,7 @@ class SlotActivity(BaseModel):
     min_hours: float | None = None
     max_hours: float | None = None
     poll_draft: dict | None = None
+    poll_options: dict | None = None
 
 
 class SlotResponse(BaseModel):
