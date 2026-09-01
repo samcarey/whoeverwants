@@ -211,7 +211,7 @@ export default function EventPreferenceModal({
                 }`}
               >
                 {anyOverlap
-                  ? "These time ranges overlap — you can't be at both."
+                  ? "These time ranges overlap."
                   : "These time ranges don't overlap, but they share your time slot."}
               </p>
               <button
@@ -219,7 +219,7 @@ export default function EventPreferenceModal({
                 onClick={() => setStep("rank")}
                 className="mt-3 w-full rounded-2xl bg-blue-600 py-2.5 font-medium text-white transition active:bg-blue-700"
               >
-                Put them in order
+                Order Preference
               </button>
             </>
           ) : (
