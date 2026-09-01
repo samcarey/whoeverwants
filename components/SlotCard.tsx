@@ -494,10 +494,12 @@ function SlotCardImpl({
                 Suggested
               </span>
               {/* No leading-none here: emoji draw taller than a 1em line box,
-                  and truncate's overflow-hidden was shaving their tops and
-                  bottoms. A normal line height gives the glyphs headroom;
-                  truncate then only crops horizontally. */}
-              <span className="min-w-0 truncate text-[15px] leading-normal">
+                  and the overflow-hidden was shaving their tops and bottoms.
+                  A normal line height gives the glyphs headroom; overflow then
+                  only crops horizontally. Plain clip, no ellipsis — a "…"
+                  after a row of emoji reads as noise, and the modal shows the
+                  full list anyway. */}
+              <span className="min-w-0 overflow-hidden whitespace-nowrap text-[15px] leading-normal">
                 {suggested.map((s) => activitySymbol(s.name, s.emoji ?? null)).join(" ")}
               </span>
             </button>
