@@ -277,6 +277,7 @@ export default function PollComments({
   groupId,
   gateOnName,
   api,
+  headingClassName = "px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400",
 }: {
   /** The poll whose thread this is — drives the default (poll) adapter.
    *  Omit when passing a custom `api`. */
@@ -289,6 +290,10 @@ export default function PollComments({
   /** Custom thread backend (memoized by the caller); default = poll comments
    *  bound to `pollId`. */
   api?: CommentsApi;
+  /** Heading style, so the section matches whatever page hosts it. Defaults
+   *  to the poll page's own idiom (its sibling "Voting for others?" heading);
+   *  the event page passes the card-header idiom its other sections use. */
+  headingClassName?: string;
 }) {
   const commentsApi = useMemo<CommentsApi>(
     () =>
@@ -527,7 +532,7 @@ export default function PollComments({
 
   return (
     <div className="mt-8">
-      <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+      <h2 className={headingClassName}>
         Comments
         {comments && comments.length > 0 ? ` (${comments.length})` : ""}
       </h2>

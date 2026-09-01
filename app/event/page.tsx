@@ -491,7 +491,12 @@ function EventPageInner() {
               {/* The event's own comment thread (the poll-comments component
                   over the event-keyed backend, migration 157) — candidates
                   only, name-gated like posting anywhere else. */}
-              <PollComments api={commentsApi} gateOnName={gateOnName} />
+              {/* Same card-header idiom as Polls / Who's in above it. */}
+              <PollComments
+                api={commentsApi}
+                gateOnName={gateOnName}
+                headingClassName="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400"
+              />
             </>
           )}
         </div>
