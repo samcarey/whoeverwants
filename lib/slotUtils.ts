@@ -417,6 +417,27 @@ export function slotRowEntryForEvent(
   );
 }
 
+/** One slot row's events in the viewer's PRIORITY order: ranked events first
+ *  by `viewer_pref_rank` ascending (1 = top choice; equal ranks are LINKED and
+ *  keep their incoming order), then everything not yet ordered — unranked
+ *  confirmations and open proposals alike — in the order the server sent
+ *  (chronological by the displayed "@ time").
+ *
+ *  Without this the stack is purely chronological, so a Backup can sit above
+ *  the event you're actually going to — the ordering you set is invisible
+ *  exactly where it matters. Mirrors EventPreferenceModal's own stored-rank-
+ *  first sort, so the stack reads in the same order the modal shows.
+ *
+ *  Returns a NEW array (the caller's is the memo's own, but not sorting in
+ *  place keeps this safe for any caller); the sort is stable, so ties keep
+ *  the incoming order. */
+export function sortEventsByPreference<T extends { viewer_pref_rank?: number | null }>(
+  events: T[],
+): T[] {
+  const rank = (e: T) => e.viewer_pref_rank ?? Number.MAX_SAFE_INTEGER;
+  return [...events].sort((a, b) => rank(a) - rank(b));
+}
+
 /** Add `days` to a "YYYY-MM-DD" string in local time, returning "YYYY-MM-DD". */
 function addDaysToDateStr(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00");

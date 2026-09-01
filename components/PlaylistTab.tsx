@@ -36,6 +36,7 @@ import {
   sortSlotsChronological,
   slotWindowEntries,
   slotRowEntryForEvent,
+  sortEventsByPreference,
   type SlotWindowEntry,
   edgeToEdgeStyle,
   TIME_COLUMN_BASIS,
@@ -228,6 +229,9 @@ export default function PlaylistTab() {
       if (list) list.push(ev);
       else map.set(target.key, [ev]);
     }
+    // Within a row, show the viewer's PRIORITY order — otherwise a Backup can
+    // sit above the event they're actually going to.
+    for (const [key, list] of map) map.set(key, sortEventsByPreference(list));
     return map;
   }, [events, entries]);
 

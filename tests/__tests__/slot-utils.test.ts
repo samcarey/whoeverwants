@@ -11,6 +11,7 @@ import {
   clusterRowCounts,
   clusterLayout,
   CLUSTER_CIRCLE_PX,
+  sortEventsByPreference,
 } from "@/lib/slotUtils";
 
 function slot(
@@ -237,5 +238,36 @@ describe("clusterLayout", () => {
       positions[0].y, positions[0].y, positions[2].y, positions[2].y, positions[2].y,
     ]);
     expect(positions[4].x).toBe(Math.max(...positions.map((p) => p.x)));
+  });
+});
+
+describe("sortEventsByPreference", () => {
+  const ev = (id: string, viewer_pref_rank?: number | null) => ({ id, viewer_pref_rank });
+
+  it("puts the top choice first, the backup after", () => {
+    // Chronologically the backup came first — the ranking must win.
+    const out = sortEventsByPreference([ev("backup", 2), ev("going", 1)]);
+    expect(out.map((e) => e.id)).toEqual(["going", "backup"]);
+  });
+
+  it("keeps unranked events after ranked ones, in their incoming order", () => {
+    const out = sortEventsByPreference([
+      ev("open-a"),
+      ev("second", 2),
+      ev("open-b", null),
+      ev("first", 1),
+    ]);
+    expect(out.map((e) => e.id)).toEqual(["first", "second", "open-a", "open-b"]);
+  });
+
+  it("is stable for LINKED events (equal ranks keep their order)", () => {
+    const out = sortEventsByPreference([ev("a", 1), ev("b", 1), ev("c", 2)]);
+    expect(out.map((e) => e.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("does not mutate the input", () => {
+    const input = [ev("backup", 2), ev("going", 1)];
+    sortEventsByPreference(input);
+    expect(input.map((e) => e.id)).toEqual(["backup", "going"]);
   });
 });
