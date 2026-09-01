@@ -187,7 +187,14 @@ export default function CandidatePicker({
             </span>
           )}
         </button>
-        {customHint}
+        {customHint && (
+          // Same keep-focus dance the row + pills do: without it, a tap on the
+          // hint blurs the input, which collapses the field and unmounts this
+          // node BEFORE the click lands — the tap would do nothing.
+          <span className="shrink-0" onMouseDown={keepInputFocus}>
+            {customHint}
+          </span>
+        )}
       </div>
 
       {selected.length > 0 && (
