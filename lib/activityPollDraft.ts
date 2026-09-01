@@ -293,17 +293,21 @@ export function pollSuggestionsAfterDeadline(o: ActivityPollOptions): boolean {
  *  the settings are lead times off an event that hasn't been scheduled yet,
  *  so spelling out the consequence beats reading two dropdowns. */
 export function pollOptionsSummary(o: ActivityPollOptions): string[] {
+  const lead = (value: string) =>
+    POLL_LEAD_OPTIONS.find((l) => l.value === value)?.label ?? value;
   const lines = [
     o.deadline === "event_start"
       ? "Voting closes when the event starts."
-      : `Voting closes ${pollDeadlineLabel(o).toLowerCase()}.`,
+      : `Voting closes ${lead(o.deadline)} before the event.`,
   ];
   if (o.suggestions === "none") {
     lines.push("Options are fixed — voters can't add their own.");
   } else if (pollSuggestionsAfterDeadline(o)) {
     lines.push("Suggestions would close after voting does, so they close with it.");
   } else {
-    lines.push(`Anyone can add options until ${pollSuggestionsLabel(o).toLowerCase()}.`);
+    const [base, value] = o.suggestions.split(":");
+    const anchor = base === "deadline" ? "voting deadline" : "event";
+    lines.push(`Anyone can add options until ${lead(value)} before the ${anchor}.`);
   }
   return lines;
 }
