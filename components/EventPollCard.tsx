@@ -14,8 +14,10 @@
  *     expand/collapse is height-animated (the grid-rows 0fr↔1fr clip).
  *   - COLLECTING options (the activity asked for a suggestion phase, so the
  *     poll opens with none): the same expand, into the suggestion ballot —
- *     second what's been proposed, type your own, submit. The header counts
- *     down to the SUGGESTION cutoff there rather than to the event.
+ *     second what's been proposed, type your own, submit.
+ *
+ * The countdown belongs to the event page's "Polls" header line, not to the
+ * cards — one clock for the section, naming whichever phase is running.
  *
  * The card fetches its own poll + results + own vote (the poll page's data,
  * scoped down): counts refresh on a 7s visible-gated loop so the tallies
@@ -30,7 +32,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import RankableOptions from "@/components/RankableOptions";
-import SimpleCountdown from "@/components/SimpleCountdown";
 import {
   apiGetPollByShortId,
   apiGetQuestionResults,
@@ -119,15 +120,12 @@ function BinaryChoice({
 
 export default function EventPollCard({
   pollRef,
-  eventIso,
   expanded,
   onToggleExpand,
   gateOnName,
   onOpenPoll,
 }: {
   pollRef: SlotEventPoll;
-  /** The event's start instant — the voting-window countdown. */
-  eventIso: string;
   expanded: boolean;
   onToggleExpand: () => void;
   gateOnName: (retry: () => void) => boolean;
@@ -409,9 +407,6 @@ export default function EventPollCard({
   }, [picked, draftSuggestion, myVote]);
 
   const icon = question ? getCategoryIcon(question) : "📊";
-  // While collecting, the actionable clock is the suggestion cutoff, not the
-  // event — that's when the ballot freezes into what everyone ranks.
-  const headerDeadline = (isCollecting && poll?.prephase_deadline) || eventIso;
   const yesNoTotal = (results?.yes_count ?? 0) + (results?.no_count ?? 0);
   const binaryTotal =
     firstRoundCount(results, options[0] ?? "") + firstRoundCount(results, options[1] ?? "");
@@ -422,29 +417,13 @@ export default function EventPollCard({
       <span className="min-w-0 flex-1 truncate text-base text-gray-900 dark:text-gray-100">
         {pollRef.title ?? "Poll"}
       </span>
-      <span className="shrink-0 text-sm">
-        {pollRef.is_closed ? (
-          <span className="text-gray-400 dark:text-gray-500">See results ›</span>
-        ) : (
-          <>
-            {/* Name the clock while collecting: it's the suggestion cutoff,
-                not the voting one, and the two are days apart. */}
-            {isCollecting && (
-              <span className="mr-1 text-gray-400 dark:text-gray-500">Suggest</span>
-            )}
-            <SimpleCountdown
-              deadline={headerDeadline}
-              compact
-              blankOnExpire
-              colorClass="text-blue-600 dark:text-blue-400"
-            />
-          </>
-        )}
-      </span>
+      {pollRef.is_closed && (
+        <span className="shrink-0 text-sm text-gray-400 dark:text-gray-500">See results ›</span>
+      )}
       {expandable && (
         <svg
           className={`w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500 transition-transform duration-300 ${
-            expanded ? "rotate-180" : ""
+            expanded ? "-rotate-90" : ""
           }`}
           fill="none"
           stroke="currentColor"
@@ -452,7 +431,10 @@ export default function EventPollCard({
           viewBox="0 0 24 24"
           aria-hidden="true"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          {/* Points LEFT while collapsed — this opens in place, and a right
+              chevron reads as "a new page slides in". Rotates to down as it
+              opens, the disclosure convention. */}
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
       )}
     </div>

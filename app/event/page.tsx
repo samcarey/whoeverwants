@@ -31,10 +31,11 @@ import HeaderPortal from "@/components/HeaderPortal";
 import AccountGateModal from "@/components/AccountGateModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import EventPollCard from "@/components/EventPollCard";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import EventPreferenceModal from "@/components/EventPreferenceModal";
 import InitialBubble from "@/components/InitialBubble";
 import PollComments, { type CommentsApi } from "@/components/PollComments";
-import { eventStartIso } from "@/components/SlotCard";
+import { useDeadlineTick } from "@/lib/useDeadlineTick";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import { haptic } from "@/lib/haptics";
 import { isValidUserName } from "@/lib/nameValidation";
@@ -160,6 +161,30 @@ function EventPageInner() {
       null
     );
   }, [events, day, key, partyId]);
+
+  // Which of the poll's clocks is running, for the Polls header line. A live
+  // suggestion phase wins (it closes first, and it's what's actionable);
+  // otherwise the voting deadline. Nothing once the phase has passed — or on
+  // a poll started open-ended, which has neither.
+  // The hook re-renders us AT each crossing; the pick below is then plain
+  // derived state — deliberately NOT memoized on the deadline strings, which
+  // don't change when a deadline passes (the whole point of the tick).
+  useDeadlineTick([
+    ev?.poll?.prephase_deadline ?? null,
+    ev?.poll?.response_deadline ?? null,
+  ]);
+  const pollClock = (() => {
+    const now = Date.now();
+    const prephase = ev?.poll?.prephase_deadline;
+    if (prephase && new Date(prephase).getTime() > now) {
+      return { label: "suggestions close in", deadline: prephase };
+    }
+    const voting = ev?.poll?.response_deadline;
+    if (voting && new Date(voting).getTime() > now) {
+      return { label: "voting closes in", deadline: voting };
+    }
+    return null;
+  })();
 
   // The slot activity behind this event (the viewer's own tag of it on this
   // day) — "Based on your interest ›" opens the activity edit sheet on it,
@@ -382,15 +407,30 @@ function EventPageInner() {
                   (one at a time) into the drag-to-rank interface. */}
               {ev.poll && ev.poll.group_short_id && ev.poll.poll_short_id && (
                 <section className="mt-4">
-                  <h2 className="mb-1 px-1 text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
-                    Polls
-                  </h2>
+                  {/* Header line owns the clock: whichever phase is actually
+                      running, named, right-justified — and gone once it
+                      passes (useDeadlineTick re-renders us at the crossing). */}
+                  <div className="mb-1 flex items-baseline justify-between gap-3 px-1">
+                    <h2 className="text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
+                      Polls
+                    </h2>
+                    {pollClock && (
+                      <span className="shrink-0 text-sm text-gray-500 dark:text-gray-400">
+                        {pollClock.label}{" "}
+                        <SimpleCountdown
+                          deadline={pollClock.deadline}
+                          compact
+                          blankOnExpire
+                          colorClass="text-blue-600 dark:text-blue-400"
+                        />
+                      </span>
+                    )}
+                  </div>
                   <div className="space-y-2">
                     {[ev.poll].map((p) => (
                       <EventPollCard
                         key={p.poll_short_id}
                         pollRef={p}
-                        eventIso={eventStartIso(ev)}
                         expanded={expandedPoll === p.poll_short_id}
                         onToggleExpand={() =>
                           setExpandedPoll((cur) =>

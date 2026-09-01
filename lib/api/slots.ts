@@ -262,6 +262,11 @@ export interface SlotEventPoll {
   group_short_id: string | null;
   title: string | null;
   is_closed: boolean;
+  /** The poll's own clocks: a running suggestion phase counts down to
+   *  `prephase_deadline`, otherwise voting counts down to
+   *  `response_deadline`. Both null when the poll started open-ended. */
+  prephase_deadline?: string | null;
+  response_deadline?: string | null;
   /** The poll question's icon fields — feed `getCategoryIcon` so surfaces
    *  show the SAME emoji the poll creation form / attached draft chose. */
   category_icon?: string | null;

@@ -301,6 +301,11 @@ class SlotEventPollInfo(BaseModel):
     group_short_id: str | None = None
     title: str | None = None
     is_closed: bool = False
+    # The poll's own clocks (migration 161 can set either): while a suggestion
+    # phase is running the FE counts down to `prephase_deadline`, else to
+    # `response_deadline`. Both null on a poll started without options.
+    prephase_deadline: str | None = None
+    response_deadline: str | None = None
     # The poll question's icon fields — the FE derives the display emoji the
     # same way poll surfaces do (explicit category_icon → built-in category
     # icon → question-type symbol).

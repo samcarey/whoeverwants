@@ -683,6 +683,11 @@ def set_event_preferences(conn, *, user_id: str, day: str, tiers: list[list[str]
         )
 
 
+def _iso(value) -> str | None:
+    """A timestamptz column as an ISO string for the wire (None passes through)."""
+    return value.isoformat() if value else None
+
+
 def _load_event_polls(conn, days: list[str]) -> dict[tuple[str, str], dict]:
     """(day, activity_key) → the STARTED poll's display info, from the
     slot_event_polls link table (one per key). What the event card's timer
@@ -693,6 +698,7 @@ def _load_event_polls(conn, days: list[str]) -> dict[tuple[str, str], dict]:
         """
         SELECT sep.day::text AS day, LOWER(sep.activity) AS key, sep.title,
                p.short_id AS poll_short_id, p.is_closed,
+               p.prephase_deadline, p.response_deadline,
                g.short_id AS group_short_id,
                q.category_icon, q.category, q.question_type
           FROM slot_event_polls sep
@@ -715,6 +721,11 @@ def _load_event_polls(conn, days: list[str]) -> dict[tuple[str, str], dict]:
             "group_short_id": r["group_short_id"],
             "title": r["title"],
             "is_closed": bool(r["is_closed"]),
+            # Both clocks, so the event page can say which one is running
+            # (suggestions close first when the activity asked for a
+            # suggestion phase) without fetching the poll itself.
+            "prephase_deadline": _iso(r["prephase_deadline"]),
+            "response_deadline": _iso(r["response_deadline"]),
             # The question's own icon fields so the FE renders the SAME emoji
             # the poll creation form / attached draft chose (getCategoryIcon's
             # inputs: explicit icon → built-in category icon → type symbol).
