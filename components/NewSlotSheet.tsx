@@ -42,6 +42,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
+import { useRouter } from "next/navigation";
 import DaysSelector from "@/components/DaysSelector";
 import TimeSlotBubbles, { type SlotState } from "@/components/TimeSlotBubbles";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
@@ -57,6 +58,7 @@ import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { cancelPrimedFocus, consumePrimedFocus } from "@/lib/useKeyboardPrimer";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
 import { DEFAULT_TIME_WINDOW, formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
+import { navigateWithTransition } from "@/lib/viewTransitions";
 import { haptic } from "@/lib/haptics";
 import {
   apiCreateSlot,
@@ -347,6 +349,7 @@ function slotDaysVisibleInCompact(slot: Slot | null): boolean {
  * open + editing state.
  */
 export default function NewSlotSheet() {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   // Which facet the sheet edits: 'create' (new slot, schedule only), 'time'
   // (existing slot's date/time), 'activity' (ONE of its activities).
@@ -465,6 +468,32 @@ export default function NewSlotSheet() {
     cancelPrimedFocus();
     setIsOpen(false);
   }, []);
+
+  // The With/Without fields' right-side affordance: instead of the picker's
+  // default "Select" text, a link over to /contacts (where friends + contact
+  // groups — everything these fields can pick from — are managed). The sheet
+  // is layout-level, so it would otherwise sit on top of the page we navigate
+  // to: close it first, one frame ahead of the nav so the view transition's
+  // outgoing snapshot is the page underneath, not the sheet. NOTE this drops
+  // un-committed activity edits, same as tapping the sheet's ✕ — which is why
+  // a group PILL still opens the read-only preview modal instead of routing.
+  const contactsLink = useMemo(
+    () => (
+      <button
+        type="button"
+        onClick={() => {
+          close();
+          requestAnimationFrame(() =>
+            navigateWithTransition(router, "/contacts", "forward"),
+          );
+        }}
+        className="shrink-0 text-base text-blue-600 dark:text-blue-400 active:opacity-70"
+      >
+        Contacts
+      </button>
+    ),
+    [close, router],
+  );
 
   // Open driven by the slot-sheet event channel. Time mode prefills the window
   // and centers the calendar on the slot's day; activity mode seeds the draft
@@ -1360,6 +1389,7 @@ export default function NewSlotSheet() {
                 onRemove={(c) => toggleEntryRef(c.kind, c)}
                 onOpenChange={handlePickerOpenChange}
                 onPillTap={handlePillTap}
+                selectHint={contactsLink}
               />
               <PartyCountField label="At Least" value={draft.entry.minPeople} setValue={setMinPeople} />
               <PartyCountField
@@ -1377,6 +1407,7 @@ export default function NewSlotSheet() {
                 onRemove={(c) => toggleEntryRef(excludeField(c.kind), c)}
                 onOpenChange={handlePickerOpenChange}
                 onPillTap={handlePillTap}
+                selectHint={contactsLink}
               />
             </section>
             )}

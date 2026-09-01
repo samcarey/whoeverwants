@@ -17,10 +17,13 @@
  * Tapping ANYWHERE in the field (the row, the whitespace around the picked
  * pills — anything but a pill itself) selects it for typing; collapse is by
  * tapping outside (blur) or Escape. The right-side "Select" hint persists
- * while the field has picks, so the affordance doesn't vanish on unfocus.
+ * while the field has picks, so the affordance doesn't vanish on unfocus —
+ * unless the caller supplies `selectHint`, which replaces that text with its
+ * own node (rendered OUTSIDE the row button so it can own its own tap
+ * target, e.g. a link to the contacts page).
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useKeyboardPrimer } from "@/lib/useKeyboardPrimer";
 
 /** See the scroll note in the header: expanding wants the row at the TOP of
@@ -71,6 +74,10 @@ interface CandidatePickerProps {
   onRemove: (c: Candidate) => void;
   /** Fired when the search box expands/collapses (and on unmount while open). */
   onOpenChange?: (open: boolean) => void;
+  /** Replaces the right-side "Select" hint (the state shown while the field
+   *  is open or already has picks). Rendered as a SIBLING of the row button,
+   *  never inside it — so it can be interactive on its own. */
+  selectHint?: ReactNode;
   /** When set, tapping a picked pill's BODY (not its ✕) fires this — e.g.
    *  the contacts page jumps to a nested group's card. Without it, pill
    *  taps are inert (only the ✕ acts), as before. */
@@ -86,6 +93,7 @@ export default function CandidatePicker({
   onRemove,
   onOpenChange,
   onPillTap,
+  selectHint,
 }: CandidatePickerProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -157,19 +165,30 @@ export default function CandidatePicker({
     if (open) e.preventDefault();
   };
 
+  // The right side reads as the field's VALUE while empty+closed
+  // ("Anyone" / "—") and as the "Select" affordance otherwise. A caller-
+  // supplied `selectHint` takes over that second state.
+  const hintShowing = open || selected.length > 0;
+  const customHint = hintShowing && selectHint ? selectHint : null;
+
   return (
     <div ref={rowRef} className="py-1">
-      <button
-        type="button"
-        onClick={focusField}
-        onMouseDown={keepInputFocus}
-        className="flex h-12 w-full items-center justify-between gap-3 text-left"
-      >
-        <span className="text-base">{label}</span>
-        <span className="truncate text-base text-gray-500 dark:text-gray-500">
-          {open || selected.length > 0 ? "Select" : emptyValue}
-        </span>
-      </button>
+      <div className="flex h-12 w-full items-center gap-3">
+        <button
+          type="button"
+          onClick={focusField}
+          onMouseDown={keepInputFocus}
+          className="flex h-full min-w-0 flex-1 items-center justify-between gap-3 text-left"
+        >
+          <span className="shrink-0 text-base">{label}</span>
+          {!customHint && (
+            <span className="truncate text-base text-gray-500 dark:text-gray-500">
+              {hintShowing ? "Select" : emptyValue}
+            </span>
+          )}
+        </button>
+        {customHint}
+      </div>
 
       {selected.length > 0 && (
         <div
