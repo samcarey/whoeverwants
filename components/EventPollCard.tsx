@@ -18,7 +18,12 @@
  * track other voters live. Votes go through the same atomic
  * `apiSubmitPollVotes` the real ballot uses (vote_id set on edits), and the
  * localStorage vote markers are kept in sync so the poll page agrees.
- * Closed polls render a "See results ›" header that navigates instead.
+ *
+ * Anything this card can't ballot inline navigates to the full poll instead,
+ * so a card is never inert: closed polls read "See results ›", and a poll
+ * still COLLECTING options (its activity asked for a suggestion phase, so it
+ * opens with none) reads "Add options ›" — suggestion entry lives on the poll
+ * page. Same fallback covers the not-yet-loaded and unexpected-shape cases.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -144,6 +149,13 @@ export default function EventPollCard({
   const isYesNo = question?.question_type === "yes_no";
   const isBinary = !isYesNo && options.length === 2;
   const expandable = !isYesNo && options.length > 2 && !pollRef.is_closed;
+  // A poll whose activity asked for a suggestion phase opens with NO options —
+  // the ballot is "add an option", which lives on the poll page.
+  const isCollecting = !!question && !isYesNo && options.length === 0 && !pollRef.is_closed;
+  // Every card must do SOMETHING when tapped: with no inline ballot to offer
+  // (collecting, still loading, or a shape this card doesn't render), the
+  // whole card routes to the full poll instead of sitting inert.
+  const opensPoll = pollRef.is_closed || !(isYesNo || isBinary || expandable);
 
   // The full drag-ballot's in-progress order. STATE, not a ref: whether the
   // Submit button shows depends on it (hidden once a submitted vote exists
@@ -341,6 +353,8 @@ export default function EventPollCard({
       <span className="shrink-0 text-sm">
         {pollRef.is_closed ? (
           <span className="text-gray-400 dark:text-gray-500">See results ›</span>
+        ) : isCollecting ? (
+          <span className="text-gray-400 dark:text-gray-500">Add options ›</span>
         ) : (
           <SimpleCountdown
             deadline={eventIso}
@@ -369,7 +383,7 @@ export default function EventPollCard({
 
   return (
     <div className="rounded-3xl bg-gray-50 px-4 py-2.5 dark:bg-gray-800">
-      {pollRef.is_closed ? (
+      {opensPoll ? (
         <button type="button" onClick={onOpenPoll} className="block w-full text-left">
           {header}
         </button>
