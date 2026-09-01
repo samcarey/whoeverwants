@@ -494,7 +494,7 @@ class TestStartedPollSuggestions:
         # …and the drafted options ride along as the attacher's suggestions.
         r = client.get(f"/api/questions/{q['id']}/results", headers=bid_headers(bid))
         assert r.status_code == 200, r.text
-        names = {s["suggestion"] for s in (r.json().get("suggestion_counts") or [])}
+        names = {s["option"] for s in (r.json().get("suggestion_counts") or [])}
         assert names == {"Dune", "Barbie"}
 
     def test_suggestions_cutoff_measured_from_the_deadline(self, client):
