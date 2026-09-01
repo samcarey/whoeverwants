@@ -177,11 +177,11 @@ function EventPageInner() {
     const now = Date.now();
     const prephase = ev?.poll?.prephase_deadline;
     if (prephase && new Date(prephase).getTime() > now) {
-      return { label: "suggestions close in", deadline: prephase };
+      return { label: "Suggestions Close In", deadline: prephase };
     }
     const voting = ev?.poll?.response_deadline;
     if (voting && new Date(voting).getTime() > now) {
-      return { label: "voting closes in", deadline: voting };
+      return { label: "Voting Closes In", deadline: voting };
     }
     return null;
   })();
