@@ -228,11 +228,10 @@ export default function EventPreferenceModal({
                 Order your events
               </h2>
               <p className="mt-1 text-[13px] text-gray-500 dark:text-gray-400">
-                Drag into preference order — if the top one doesn&apos;t happen, the
-                next is your backup. Tap the{" "}
+                Drag into preference order — if the top one doesn&apos;t get enough
+                support to happen, the next is your backup. Tap the{" "}
                 <span className="font-bold text-gray-700 dark:text-gray-300">&amp;</span>{" "}
-                between two events to link them: linked events are{" "}
-                <span className="font-medium">both confirmed, regardless of overlap</span>.
+                between events if you would try to go to both.
               </p>
               <div className="mt-3">
                 <RankableOptions
