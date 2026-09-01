@@ -425,15 +425,20 @@ export default function EventPollCard({
       <span className="shrink-0 text-sm">
         {pollRef.is_closed ? (
           <span className="text-gray-400 dark:text-gray-500">See results ›</span>
-        ) : isCollecting ? (
-          <span className="text-gray-400 dark:text-gray-500">Add options ›</span>
         ) : (
-          <SimpleCountdown
-            deadline={headerDeadline}
-            compact
-            blankOnExpire
-            colorClass="text-blue-600 dark:text-blue-400"
-          />
+          <>
+            {/* Name the clock while collecting: it's the suggestion cutoff,
+                not the voting one, and the two are days apart. */}
+            {isCollecting && (
+              <span className="mr-1 text-gray-400 dark:text-gray-500">Suggest</span>
+            )}
+            <SimpleCountdown
+              deadline={headerDeadline}
+              compact
+              blankOnExpire
+              colorClass="text-blue-600 dark:text-blue-400"
+            />
+          </>
         )}
       </span>
       {expandable && (
