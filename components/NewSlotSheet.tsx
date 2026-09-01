@@ -1466,7 +1466,7 @@ export default function NewSlotSheet() {
                 <button
                   type="button"
                   onClick={openPollOptionsSub}
-                  className="shrink-0 flex items-center gap-0.5 text-[17.5px] font-medium text-blue-600 dark:text-blue-400 active:opacity-70"
+                  className="shrink-0 flex items-center gap-0.5 text-[17.5px] font-medium text-gray-500 dark:text-gray-400 active:opacity-70"
                 >
                   Options
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
