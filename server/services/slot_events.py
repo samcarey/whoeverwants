@@ -42,6 +42,15 @@ Per-party flags the UI depends on:
                  it) nor the viewer's own. False + not confirmed = "Full".
   * cancelling frees capacity; everything recomputes from scratch on every
                  read — nothing derived is stored.
+  * `standby`  — the viewer's confirmation here is a BACKUP: they ranked this
+                 party BELOW another same-day party of theirs (migration 160)
+                 that is currently met, so they're going to the higher-ranked
+                 one and only fall back here if it collapses. Standby members
+                 (anyone's, not just the viewer's) are excluded from a
+                 party's met / capacity / count / names / time math while the
+                 suppression holds — see _compute_standby for the exact
+                 (deliberately one-level) rule. Equal ranks are LINKED
+                 (attending both) and never suppress each other.
 
 Constraint source: the activity's who_with[0] (the editor is
 single-condition), else the legacy activity-level range, else unconstrained.
@@ -428,6 +437,7 @@ def _near_miss_payload(
         "viewer_confirmed": False,
         "can_confirm": False,
         "met": False,
+        "standby": False,
         "needed": need,
     }
 
@@ -555,25 +565,91 @@ def _load_confirmations(conn, days: list[str]) -> dict[tuple[str, str], dict[str
     return out
 
 
-def _load_pref_ranks(conn, user_id: str, days: list[str]) -> dict[str, int]:
-    """event_id → the viewer's stored preference rank (migration 160). Lower =
-    more preferred; EQUAL ranks mean the viewer LINKED those events (attending
-    both regardless of overlap). Only the viewer's own confirmations carry a
-    rank, so this is a per-viewer read."""
+def _load_ranks(conn, days: list[str]) -> dict[str, dict[str, int]]:
+    """event_id → {user_id: pref_rank} for EVERY ranked confirmation on the
+    given days (migration 160). Lower = more preferred; EQUAL ranks mean the
+    user LINKED those events (attending both regardless of overlap); rows
+    with a NULL rank (never ordered) are omitted. All members' ranks are
+    loaded — the standby computation needs everyone's, not just the
+    viewer's; the viewer's own are echoed back as viewer_pref_rank."""
     if not days:
         return {}
     rows = conn.execute(
         """
-        SELECT c.event_id, c.pref_rank
+        SELECT c.event_id, c.user_id, c.pref_rank
           FROM slot_event_confirmations c
           JOIN slot_events e ON e.id = c.event_id
-         WHERE c.user_id = %(u)s::uuid
-           AND c.pref_rank IS NOT NULL
+         WHERE c.pref_rank IS NOT NULL
            AND e.day = ANY(%(days)s::date[])
         """,
-        {"u": user_id, "days": days},
+        {"days": days},
     ).fetchall()
-    return {str(r["event_id"]): r["pref_rank"] for r in rows}
+    out: dict[str, dict[str, int]] = {}
+    for r in rows:
+        out.setdefault(str(r["event_id"]), {})[str(r["user_id"])] = r["pref_rank"]
+    return out
+
+
+def _compute_standby(
+    events: dict[tuple[str, str], dict[str, _Candidate]],
+    confirmations: dict[tuple[str, str], dict[str, set[str]]],
+    ranks: dict[str, dict[str, int]],
+    members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
+) -> set[tuple[str, str]]:
+    """{(event_id, user_id)} pairs whose confirmation is on STANDBY — the
+    preference order (migration 160) actually taking effect.
+
+    A user's confirmation on party E is standby iff they hold another
+    same-day confirmation on party E' with a strictly LOWER rank and E' is
+    currently met: they're going to E', and E is only their backup. Standby
+    members are then excluded from the DISPLAYED met / capacity / count /
+    names / time math (see _party_payload), so a backup confirmation can't
+    prop up a second event or block someone else's seat while the top
+    choice is on.
+
+    Deliberately ONE level deep and deterministic: "met" here is the RAW
+    met (every valid confirmation counting, no suppression). A recursive
+    definition — E' only counts if ITS members aren't standby elsewhere —
+    has no stable answer (two users ranking a pair of events oppositely
+    oscillates), so we don't attempt it. The artifact: a party met only
+    thanks to a member who is themselves standby elsewhere still suppresses
+    its lower-ranked members this read; it resolves itself as confirmations
+    settle, matching the engine's recompute-from-scratch-per-read model.
+
+    Equal ranks are LINKED (attend both) and never suppress each other;
+    unranked (NULL) confirmations neither suppress nor get suppressed; a
+    stale confirmation (its slot deleted → the user is no longer a
+    candidate) is ignored on both sides."""
+    if not ranks:
+        return set()
+    raw_met: dict[str, bool] = {}
+    where: dict[str, tuple[str, str]] = {}
+    for (day, key), parties in confirmations.items():
+        cands = events.get((day, key), {})
+        for eid, uids in parties.items():
+            where[eid] = (day, key)
+            confirmed = [cands[u] for u in uids if u in cands]
+            raw_met[eid] = bool(confirmed) and _set_ok(
+                confirmed, members, blocked, require_min=True
+            )
+    per_user_day: dict[tuple[str, str], list[tuple[str, int]]] = {}
+    for eid, by_user in ranks.items():
+        loc = where.get(eid)
+        if loc is None:
+            continue
+        cands = events.get(loc, {})
+        for uid, rank in by_user.items():
+            if uid in cands:
+                per_user_day.setdefault((uid, loc[0]), []).append((eid, rank))
+    out: set[tuple[str, str]] = set()
+    for (uid, day), entries in per_user_day.items():
+        met_ranks = [r for eid, r in entries if raw_met.get(eid)]
+        if not met_ranks:
+            continue
+        best = min(met_ranks)
+        out.update((eid, uid) for eid, r in entries if r > best)
+    return out
 
 
 def set_event_preferences(conn, *, user_id: str, day: str, tiers: list[list[str]]) -> None:
@@ -662,6 +738,7 @@ def _party_payload(
     party_id: str | None,
     party_uids: set[str],
     unattached: set[str],
+    standby: set[tuple[str, str]] = frozenset(),
 ) -> dict | None:
     """One party as the viewer sees it. `party_id` None = the fresh (unminted)
     party — returned only when a viable gathering exists among the unattached
@@ -674,6 +751,12 @@ def _party_payload(
     viewer = cands[viewer_id]
     confirmed = [cands[u] for u in party_uids if u in cands]
     viewer_confirmed = viewer_id in {c.user_id for c in confirmed}
+    # STANDBY members (ranked this party below a same-day met one — see
+    # _compute_standby) keep their confirmation row but don't COUNT: met,
+    # capacity, count, names, and time are all computed over the active set,
+    # so a backup can't prop an event up or block someone else's seat.
+    active = [c for c in confirmed if (party_id, c.user_id) not in standby]
+    viewer_standby = viewer_confirmed and (party_id, viewer_id) in standby
     pool_ids = ({c.user_id for c in confirmed} | unattached) - {viewer_id}
     pool = [cands[u] for u in pool_ids]
     earliest_viable = _preferred_viable_start(viewer, pool, members, blocked)
@@ -682,22 +765,24 @@ def _party_payload(
 
     if viewer_confirmed:
         can_confirm = True  # the button is a cancel; always available
-        joined = confirmed
+        # A standby viewer's card still anchors to a window that includes
+        # them — it's what they'd share IF the fallback fires.
+        joined = active + ([viewer] if viewer_standby else [])
     else:
-        joined = confirmed + [viewer]
+        joined = active + [viewer]
         can_confirm = _set_ok(joined, members, blocked, require_min=False)
 
     # Met = the people actually going satisfy every one of THEIR conditions,
     # minimums included. A solo confirmer whose "At Least" is "Just me" IS a
     # met event — going alone counts; there is no global two-person floor.
-    met = bool(confirmed) and _set_ok(confirmed, members, blocked, require_min=True)
+    met = bool(active) and _set_ok(active, members, blocked, require_min=True)
 
     # The "@ time" on the card: once the event is ON it's the best-preferred
     # start the people actually going all share; until then it's the
     # best-preferred start any viable group containing the viewer could
     # manage (falling back to earliest when nobody marked preferences).
     if met:
-        time_min = _best_start(confirmed, _common_windows(confirmed))
+        time_min = _best_start(active, _common_windows(active))
     else:
         time_min = earliest_viable
 
@@ -723,16 +808,20 @@ def _party_payload(
             if window
             else None
         ),
-        # Count includes the viewer; the NAMES exclude them — every surface
-        # shows the viewer's own membership as "you" (the card's "You're
-        # going!" pill, the event page's "You" row), never as their own disc.
-        "confirmed_count": len(confirmed),
+        # Count = the ACTIVE goers (standby members excluded), including the
+        # viewer when they're active; the NAMES exclude the viewer — every
+        # surface shows the viewer's own membership as "you" (the card's
+        # "You're going!" pill, the event page's "You" row), never as their
+        # own disc. A standby viewer is in neither (the FE subtracts the
+        # viewer from the count only when `standby` is false).
+        "confirmed_count": len(active),
         "confirmed_names": sorted(
-            (c.name or "Someone") for c in confirmed if c.user_id != viewer_id
+            (c.name or "Someone") for c in active if c.user_id != viewer_id
         ),
         "viewer_confirmed": viewer_confirmed,
         "can_confirm": can_confirm,
         "met": met,
+        "standby": viewer_standby,
         "needed": 0,
     }
 
@@ -745,6 +834,7 @@ def _cards_for_key(
     members: dict[str, set[str]],
     blocked: dict[str, set[str]],
     poll_info: dict | None = None,
+    standby: set[tuple[str, str]] = frozenset(),
 ) -> list[dict]:
     """Every card the viewer sees for one (day, activity): each LIVE party
     (≥1 valid confirmation), plus the fresh empty party exactly when the
@@ -774,7 +864,7 @@ def _cards_for_key(
             continue
         card = _party_payload(
             day, cands, viewer_id, members, blocked,
-            party_id=eid, party_uids=uids, unattached=unattached,
+            party_id=eid, party_uids=uids, unattached=unattached, standby=standby,
         )
         if card is None:
             continue
@@ -855,21 +945,23 @@ def list_events(conn, *, user_id: str | None) -> list[dict]:
     blocked = _load_blocks(conn, uids)
     confirmations = _load_confirmations(conn, days)
     polls = _load_event_polls(conn, days)
+    ranks = _load_ranks(conn, days)
+    standby = _compute_standby(events, confirmations, ranks, members, blocked)
     out: list[dict] = []
     for (day, key), cands in events.items():
         out.extend(
             _cards_for_key(
                 day, cands, confirmations.get((day, key), {}), user_id, members, blocked,
-                poll_info=polls.get((day, key)),
+                poll_info=polls.get((day, key)), standby=standby,
             )
         )
     # The viewer's stored preference order (rank; equal = linked) rides on
     # their own confirmed cards so the FE can pre-seed the ordering modal.
-    ranks = _load_pref_ranks(conn, user_id, days)
     if ranks:
         for card in out:
-            if card.get("viewer_confirmed") and card.get("id") in ranks:
-                card["viewer_pref_rank"] = ranks[card["id"]]
+            eid = card.get("id")
+            if card.get("viewer_confirmed") and eid in ranks and user_id in ranks[eid]:
+                card["viewer_pref_rank"] = ranks[eid][user_id]
     # Chronological across keys BY THE DISPLAYED "@ time" (falling back to the
     # anchor window) so the list order matches what the cards say;
     # _cards_for_key already ordered within a key (own party, joinable,
@@ -928,16 +1020,25 @@ def set_confirmation(
     cands = events.get((day, key))
     if not cands or user_id not in cands:
         raise NoSuchEventError()
-    gids, uids = _all_ref_group_ids({(day, key): cands})
+    # Members/blocks span the whole DAY (not just this key): the standby
+    # computation needs raw met for every same-day party so a backup
+    # confirmation elsewhere frees a seat here.
+    gids, uids = _all_ref_group_ids(events)
     members = _load_memberships(conn, gids, uids)
     blocked = _load_blocks(conn, uids)
-    parties = _load_confirmations(conn, [day]).get((day, key), {})
+    all_confirmations = _load_confirmations(conn, [day])
+    parties = all_confirmations.get((day, key), {})
+    standby = _compute_standby(
+        events, all_confirmations, _load_ranks(conn, [day]), members, blocked
+    )
     valid = {eid: {u for u in uids_ if u in cands} for eid, uids_ in parties.items()}
     attached: set[str] = set().union(*valid.values()) if valid else set()
     unattached = set(cands) - attached
 
-    def _may_join(uids_: set[str]) -> bool:
-        joined = [cands[u] for u in uids_] + [cands[user_id]]
+    def _may_join(eid: str, uids_: set[str]) -> bool:
+        # Standby members don't hold a seat — same active-set rule the
+        # cards' can_confirm uses (_party_payload).
+        joined = [cands[u] for u in uids_ if (eid, u) not in standby] + [cands[user_id]]
         return _set_ok(joined, members, blocked, require_min=False)
 
     target: str | None = None
@@ -945,13 +1046,13 @@ def set_confirmation(
         if event_id is not None:
             if event_id not in parties:
                 raise NoSuchEventError()
-            if user_id not in valid[event_id] and not _may_join(valid[event_id]):
+            if user_id not in valid[event_id] and not _may_join(event_id, valid[event_id]):
                 raise EventFullError()
             target = event_id
         else:
             # No party named: take the fullest one that works, else mint.
             for eid, uids_ in sorted(valid.items(), key=lambda kv: -len(kv[1])):
-                if user_id in uids_ or _may_join(uids_):
+                if user_id in uids_ or _may_join(eid, uids_):
                     target = eid
                     break
             if target is None:
@@ -1020,9 +1121,16 @@ def set_confirmation(
         {"d": day, "k": key},
     )
 
-    fresh_parties = _load_confirmations(conn, [day]).get((day, key), {})
+    fresh_confirmations = _load_confirmations(conn, [day])
+    fresh_parties = fresh_confirmations.get((day, key), {})
+    fresh_standby = _compute_standby(
+        events, fresh_confirmations, _load_ranks(conn, [day]), members, blocked
+    )
     poll_info = _load_event_polls(conn, [day]).get((day, key))
-    cards = _cards_for_key(day, cands, fresh_parties, user_id, members, blocked, poll_info=poll_info)
+    cards = _cards_for_key(
+        day, cands, fresh_parties, user_id, members, blocked,
+        poll_info=poll_info, standby=fresh_standby,
+    )
     for card in cards:
         if confirmed and card["id"] == target:
             return card
@@ -1042,6 +1150,7 @@ def set_confirmation(
         "viewer_confirmed": False,
         "can_confirm": False,
         "met": False,
+        "standby": False,
         "needed": 0,
         "poll": poll_info,
     }

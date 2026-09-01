@@ -772,3 +772,104 @@ def test_event_preferences_linked_tier_and_garbage_ids(client):
     mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
     assert mine[act_a.lower()]["viewer_pref_rank"] == 1
     assert mine[act_b.lower()]["viewer_pref_rank"] == 1
+
+
+def _set_prefs(client, browser_id, day, tiers):
+    r = client.post(
+        "/api/slots/events/preferences",
+        json={"day": day, "tiers": tiers},
+        headers=bid_headers(browser_id),
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_backup_confirmation_is_inert_while_top_choice_is_met(client):
+    """The preference order BITES: a confirmation ranked below a same-day met
+    event goes standby (excluded from met/count), and reactivates the moment
+    the top choice collapses — the modal's "the next is your backup"
+    promise, live."""
+    day = _day(43)
+    act_a = _act("Climbing")
+    act_b = _act("Karaoke")
+    b1 = str(uuid.uuid4())
+    _sign_in(client, b1, "Sol")
+    _create_slot(client, browser_id=b1, day_time_windows=_dtw(day), activities=[act_a, act_b])
+    for act in (act_a, act_b):
+        assert _confirm(client, browser_id=b1, day=day, activity=act).status_code == 200
+
+    # Unordered: both solo confirmations are met, nothing is standby.
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    assert mine[act_a.lower()]["met"] and mine[act_b.lower()]["met"]
+    assert not mine[act_a.lower()]["standby"] and not mine[act_b.lower()]["standby"]
+
+    # A first, B the backup → B goes standby: not met, count 0.
+    _set_prefs(client, b1, day, [[mine[act_a.lower()]["id"]], [mine[act_b.lower()]["id"]]])
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    top, back = mine[act_a.lower()], mine[act_b.lower()]
+    assert top["met"] and not top["standby"]
+    assert back["standby"] and not back["met"] and back["confirmed_count"] == 0
+    assert back["viewer_confirmed"]  # still their confirmation — button = cancel
+
+    # The top choice falls through (backed out) → the backup activates.
+    assert _confirm(client, browser_id=b1, day=day, activity=act_a, confirmed=False).status_code == 200
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    assert set(mine) == {act_b.lower()}
+    assert mine[act_b.lower()]["met"] and not mine[act_b.lower()]["standby"]
+
+
+def test_linked_equal_ranks_do_not_suppress(client):
+    """Equal ranks = LINKED ("&" — attending both): neither event suppresses
+    the other even though both are met."""
+    day = _day(44)
+    act_a = _act("Trivia")
+    act_b = _act("Bowling")
+    b1 = str(uuid.uuid4())
+    _sign_in(client, b1, "Tam")
+    _create_slot(client, browser_id=b1, day_time_windows=_dtw(day), activities=[act_a, act_b])
+    for act in (act_a, act_b):
+        assert _confirm(client, browser_id=b1, day=day, activity=act).status_code == 200
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    _set_prefs(client, b1, day, [[mine[act_a.lower()]["id"], mine[act_b.lower()]["id"]]])
+    mine = {e["activity"].lower(): e for e in _events(client, browser_id=b1) if e["viewer_confirmed"]}
+    assert mine[act_a.lower()]["met"] and mine[act_b.lower()]["met"]
+    assert not mine[act_a.lower()]["standby"] and not mine[act_b.lower()]["standby"]
+
+
+def test_standby_frees_a_seat_for_someone_else(client):
+    """A standby member doesn't hold a seat: once X's top choice is on, X's
+    backup confirmation stops counting against Y's max — so Z, previously
+    locked out ("Full"), can join, both on the card and at the confirm
+    gate."""
+    day = _day(45)
+    act_top = _act("Climbing")
+    act_back = _act("Karaoke")
+    x, y, z = (str(uuid.uuid4()) for _ in range(3))
+    _sign_in(client, x, "Xen")
+    _sign_in(client, y, "Yara")
+    _sign_in(client, z, "Zed")
+    _create_slot(client, browser_id=x, day_time_windows=_dtw(day), activities=[act_top, act_back])
+    _create_slot(
+        client, browser_id=y, day_time_windows=_dtw(day),
+        activities=[{"name": act_back, "who_with": [{"max_people": 2}]}],
+    )
+    _create_slot(client, browser_id=z, day_time_windows=_dtw(day), activities=[act_back])
+
+    assert _confirm(client, browser_id=x, day=day, activity=act_top).status_code == 200
+    assert _confirm(client, browser_id=x, day=day, activity=act_back).status_code == 200
+    assert _confirm(client, browser_id=y, day=day, activity=act_back).status_code == 200
+
+    # Unordered, X counts: the pair {X, Y} caps Y's max of 2 → Z is Full.
+    z_card = next(e for e in _events(client, browser_id=z) if e["confirmed_count"] > 0)
+    assert not z_card["can_confirm"]
+    party = z_card["id"]
+
+    # X ranks the other activity first (it's met solo) → X goes standby on
+    # this one → the seat frees for Z.
+    x_cards = {e["activity"].lower(): e for e in _events(client, browser_id=x) if e["viewer_confirmed"]}
+    _set_prefs(client, x, day, [[x_cards[act_top.lower()]["id"]], [x_cards[act_back.lower()]["id"]]])
+    z_card = next(e for e in _events(client, browser_id=z) if e["id"] == party)
+    assert z_card["can_confirm"] and z_card["confirmed_count"] == 1  # just Yara
+    r = _confirm(client, browser_id=z, day=day, activity=act_back, event_id=party)
+    assert r.status_code == 200, r.text
+    # The active pair {Y, Z} is met (Y's max 2 holds with X on standby).
+    assert r.json()["met"] and r.json()["confirmed_count"] == 2

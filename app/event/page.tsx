@@ -239,13 +239,20 @@ function EventPageInner() {
     onCommit: () => router.push("/"),
   });
 
-  const going = !!ev && ev.viewer_confirmed && ev.met;
-  const pending = !!ev && ev.viewer_confirmed && !ev.met;
+  // Backup = the viewer ranked this event below a same-day one that's on;
+  // their confirmation stands, but they only count here if that falls through.
+  const backup = !!ev && ev.viewer_confirmed && !!ev.standby;
+  const going = !!ev && ev.viewer_confirmed && ev.met && !backup;
+  const pending = !!ev && ev.viewer_confirmed && !ev.met && !backup;
   // NEAR-MISS: no viable gathering yet — "Needs N more" instead of Full.
   const short = !!ev && !ev.viewer_confirmed && (ev.needed ?? 0) > 0;
   const full = !!ev && !ev.viewer_confirmed && !ev.can_confirm && !short;
   const statusPill = going ? (
     <span className="rounded-full bg-green-600 px-3 py-1 text-sm font-medium text-white">You&apos;re going!</span>
+  ) : backup ? (
+    <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+      Backup
+    </span>
   ) : pending ? (
     <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
       Pending
@@ -332,6 +339,13 @@ function EventPageInner() {
               {/* The action lives right under the title block (Back Out when
                   confirmed — the playlist card deliberately has no cancel). */}
               <div className="mt-2.5">
+                {backup && (
+                  <p className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                    Your higher-ranked pick for this slot is on, so you&apos;re
+                    not counted here — this stays your backup if it falls
+                    through.
+                  </p>
+                )}
                 {ev.viewer_confirmed ? (
                   <button
                     type="button"
@@ -411,7 +425,14 @@ function EventPageInner() {
                               photo is set (the /info members-list convention
                               for the viewer's own row). */}
                           <InitialBubble name={null} imageUrl={myImageUrl} sizeClassName="w-8 h-8" />
-                          <span className="text-gray-900 dark:text-gray-100">You</span>
+                          <span className="text-gray-900 dark:text-gray-100">
+                            You
+                            {backup && (
+                              <span className="ml-1.5 text-[12px] text-amber-600 dark:text-amber-400">
+                                (backup)
+                              </span>
+                            )}
+                          </span>
                         </li>
                       )}
                       {ev.confirmed_names.map((n, i) => (

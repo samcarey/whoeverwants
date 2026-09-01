@@ -324,6 +324,11 @@ class SlotEventResponse(BaseModel):
     viewer_confirmed: bool = False
     can_confirm: bool = False
     met: bool = False
+    # The viewer's confirmation here is a BACKUP: they ranked this event
+    # below another same-day event of theirs that's currently on, so they
+    # aren't counted toward this one (met / capacity / count / names) unless
+    # the higher-ranked one falls through.
+    standby: bool = False
     # NEAR-MISS: how many more people a gathering still needs before it's
     # viable (0 on a normal card). Shown when no viable gathering exists so a
     # declared activity is never a silent dead end; such a card is not

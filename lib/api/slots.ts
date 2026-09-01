@@ -216,6 +216,14 @@ export interface SlotEvent {
   /** The confirmed set satisfies everyone in it, minimums included — the
    *  event is on; the card goes bold. */
   met: boolean;
+  /** The viewer's confirmation here is a BACKUP: they ranked this event
+   *  below another same-day event of theirs that's currently on (the
+   *  preference order actually biting), so they are NOT counted toward this
+   *  one — met / capacity / count / names all exclude them — unless the
+   *  higher-ranked pick falls through. Note `confirmed_count` therefore does
+   *  NOT include a standby viewer (subtract the viewer from the count only
+   *  when this is false). */
+  standby?: boolean;
   /** NEAR-MISS: how many more people a gathering still needs before it's
    *  viable (0 on a normal card). When > 0 the card reads "Needs N more"
    *  and isn't confirmable yet — shown so a declared activity is never a

@@ -141,6 +141,9 @@ function useDiscFit(total: number) {
  *  right-side pill is a pure status indicator — NO in-card Confirm button:
  *    - joinable            → no pill (tap the card to join on its page),
  *    - confirmed + met     → GREEN card, "You're going!" pill (indicator),
+ *    - confirmed + standby → AMBER card, "Backup" pill — the viewer ranked
+ *      this below a same-day event that's on; they only count here if the
+ *      top pick falls through,
  *    - confirmed + pending → BLUE card, "Pending" pill (indicator),
  *    - locked out ("Full") → GREY card, "Full" pill (indicator) — grey, not
  *      green, even when the party is met: a happening event you're not part
@@ -159,27 +162,36 @@ function EventCard({
   ev: SlotEvent;
   onOpen: (ev: SlotEvent) => void;
 }) {
-  const going = ev.viewer_confirmed && ev.met;
-  const pending = ev.viewer_confirmed && !ev.met;
+  // Backup = the viewer ranked this event below another same-day one that's
+  // currently on; they hold a confirmation but don't count toward this party
+  // unless the top pick falls through. Amber, whatever the party's met state.
+  const backup = ev.viewer_confirmed && !!ev.standby;
+  const going = ev.viewer_confirmed && ev.met && !backup;
+  const pending = ev.viewer_confirmed && !ev.met && !backup;
   const full = !ev.viewer_confirmed && !ev.can_confirm;
-  // Everyone confirmed except the viewer (the server already leaves them out of
-  // confirmed_names; confirmed_count counts them).
-  const othersTotal = ev.confirmed_count - (ev.viewer_confirmed ? 1 : 0);
+  // Everyone confirmed except the viewer (the server already leaves them out
+  // of confirmed_names; confirmed_count counts them — unless the viewer is
+  // standby, in which case the count already excludes them).
+  const othersTotal = ev.confirmed_count - (ev.viewer_confirmed && !backup ? 1 : 0);
   const { ref: discsRef, fit } = useDiscFit(othersTotal);
   const shown = ev.confirmed_names.slice(0, fit);
   const extra = othersTotal - shown.length;
   const cardCls = going
     ? "border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 font-semibold"
-    : pending
-      ? "border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200"
-      : full
-        ? "border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/60 text-gray-400 dark:text-gray-500"
-        : "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300";
+    : backup
+      ? "border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200"
+      : pending
+        ? "border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200"
+        : full
+          ? "border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/60 text-gray-400 dark:text-gray-500"
+          : "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300";
   const timeCls = going
     ? "text-green-600 dark:text-green-300"
-    : pending
-      ? "text-blue-500 dark:text-blue-300"
-      : "text-gray-400 dark:text-gray-500";
+    : backup
+      ? "text-amber-600 dark:text-amber-300"
+      : pending
+        ? "text-blue-500 dark:text-blue-300"
+        : "text-gray-400 dark:text-gray-500";
   return (
     <div
       role="button"
@@ -217,7 +229,11 @@ function EventCard({
           <div ref={discsRef} className="min-w-0 flex-1 flex items-center gap-1 overflow-hidden">
             {shown.length === 0 && extra <= 0 ? (
               <span className="truncate text-[11px] font-normal text-gray-400 dark:text-gray-500">
-                {ev.viewer_confirmed ? "Just you so far" : "No one yet"}
+                {ev.viewer_confirmed
+                  ? backup
+                    ? "You're the backup"
+                    : "Just you so far"
+                  : "No one yet"}
               </span>
             ) : (
               shown.map((n, i) => (
@@ -241,6 +257,10 @@ function EventCard({
           {going ? (
             <span className="shrink-0 whitespace-nowrap rounded-full bg-green-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white">
               You&apos;re going!
+            </span>
+          ) : backup ? (
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-0.5 text-[11.5px] font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+              Backup
             </span>
           ) : pending ? (
             <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-0.5 text-[11.5px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
