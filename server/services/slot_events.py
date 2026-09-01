@@ -1363,6 +1363,19 @@ def _create_event_poll(
         from models import SubmitVoteRequest  # noqa: PLC0415
         from services.questions import _submit_vote_to_question  # noqa: PLC0415
 
+        # Attribute the seed to the attacher's earliest-linked browser (the
+        # `add_member_for_user` key). Ballot privacy scopes "your own vote" by
+        # browser, so an unattributed seed would be invisible to its own
+        # author — they'd re-suggest their own options and double the counts.
+        owner_browser = conn.execute(
+            """
+            SELECT browser_id FROM user_browsers
+             WHERE user_id = %(u)s::uuid
+             ORDER BY linked_at ASC
+             LIMIT 1
+            """,
+            {"u": owner_id},
+        ).fetchone()
         try:
             # SAVEPOINT: a failed insert would otherwise poison the enclosing
             # transaction and take the link INSERT below down with it.
@@ -1377,6 +1390,7 @@ def _create_event_poll(
                         voter_name=creator_name,
                     ),
                     now,
+                    browser_id=str(owner_browser["browser_id"]) if owner_browser else None,
                 )
         except Exception:  # noqa: BLE001
             logger.warning("event poll: seeding initial suggestions failed", exc_info=True)

@@ -12,6 +12,10 @@
  *     drag-to-rank ballot (RankableOptions) + Submit. The PARENT enforces
  *     one-open-at-a-time (expanding one collapses the other) and the
  *     expand/collapse is height-animated (the grid-rows 0fr↔1fr clip).
+ *   - COLLECTING options (the activity asked for a suggestion phase, so the
+ *     poll opens with none): the same expand, into the suggestion ballot —
+ *     second what's been proposed, type your own, submit. The header counts
+ *     down to the SUGGESTION cutoff there rather than to the event.
  *
  * The card fetches its own poll + results + own vote (the poll page's data,
  * scoped down): counts refresh on a 7s visible-gated loop so the tallies
@@ -19,11 +23,9 @@
  * `apiSubmitPollVotes` the real ballot uses (vote_id set on edits), and the
  * localStorage vote markers are kept in sync so the poll page agrees.
  *
- * Anything this card can't ballot inline navigates to the full poll instead,
- * so a card is never inert: closed polls read "See results ›", and a poll
- * still COLLECTING options (its activity asked for a suggestion phase, so it
- * opens with none) reads "Add options ›" — suggestion entry lives on the poll
- * page. Same fallback covers the not-yet-loaded and unexpected-shape cases.
+ * Anything left over navigates to the full poll instead, so a card is never
+ * inert: closed polls read "See results ›", and that same fallback covers the
+ * not-yet-loaded and unexpected-shape cases.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -139,23 +141,36 @@ export default function EventPollCard({
     yesNo: string | null;
     ranking: string[] | null;
     tiers: string[][] | null;
+    suggestions: string[] | null;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  // Suggestion ballot: what the viewer has picked (their own proposals +
+  // seconds), and the text they're typing. `picked` is seeded from their
+  // submitted vote once it loads.
+  const [picked, setPicked] = useState<string[]>([]);
+  const [draftSuggestion, setDraftSuggestion] = useState("");
 
   const question: Question | undefined = poll?.questions?.[0];
   const options = useMemo(() => question?.options ?? [], [question]);
   const isYesNo = question?.question_type === "yes_no";
   const isBinary = !isYesNo && options.length === 2;
-  const expandable = !isYesNo && options.length > 2 && !pollRef.is_closed;
-  // A poll whose activity asked for a suggestion phase opens with NO options —
-  // the ballot is "add an option", which lives on the poll page.
+  // A poll whose activity asked for a suggestion phase opens with NO options:
+  // the ballot is "propose / second an option" until the cutoff.
   const isCollecting = !!question && !isYesNo && options.length === 0 && !pollRef.is_closed;
+  const expandable = !pollRef.is_closed && !isYesNo && (isCollecting || options.length > 2);
   // Every card must do SOMETHING when tapped: with no inline ballot to offer
-  // (collecting, still loading, or a shape this card doesn't render), the
-  // whole card routes to the full poll instead of sitting inert.
+  // (still loading, or a shape this card doesn't render), the whole card
+  // routes to the full poll instead of sitting inert.
   const opensPoll = pollRef.is_closed || !(isYesNo || isBinary || expandable);
+  // Everything proposed so far, with its second-count — the aggregate, never
+  // per-voter (ballot privacy: `suggestion_counts` carries no names).
+  const proposed = useMemo(
+    () => (results?.suggestion_counts ?? []).map((sc) => ({ option: sc.option, count: sc.count })),
+    [results],
+  );
+  const pickedSet = useMemo(() => new Set(picked), [picked]);
 
   // The full drag-ballot's in-progress order. STATE, not a ref: whether the
   // Submit button shows depends on it (hidden once a submitted vote exists
@@ -212,7 +227,10 @@ export default function EventPollCard({
             yesNo: mine.yes_no_choice,
             ranking: mine.ranked_choices,
             tiers: mine.ranked_choice_tiers,
+            suggestions: mine.suggestions,
           });
+          // Seed the suggestion ballot from what they already submitted.
+          if (mine.suggestions?.length) setPicked(mine.suggestions);
         } catch {
           // No own vote / fetch failed — fresh ballot.
         }
@@ -274,6 +292,7 @@ export default function EventPollCard({
             yesNo: v.yes_no_choice,
             ranking: v.ranked_choices,
             tiers: v.ranked_choice_tiers,
+            suggestions: v.suggestions,
           });
         }
         void loadResults(question.id);
@@ -309,6 +328,46 @@ export default function EventPollCard({
     fire();
   };
 
+  /** Toggle a proposed option in/out of the viewer's ballot (a "second"). */
+  const togglePicked = (option: string) => {
+    setPicked((prev) =>
+      prev.includes(option) ? prev.filter((o) => o !== option) : [...prev, option],
+    );
+  };
+
+  /** Commit the typed text as a new proposal (picked by definition — you
+   *  second what you propose). Case-insensitive dedupe against what's already
+   *  on the board, so typing an existing option just selects it. */
+  const addDraftSuggestion = () => {
+    const text = draftSuggestion.trim();
+    if (!text) return;
+    const existing =
+      proposed.find((p) => p.option.toLowerCase() === text.toLowerCase())?.option ??
+      picked.find((o) => o.toLowerCase() === text.toLowerCase());
+    const value = existing ?? text;
+    setPicked((prev) => (prev.includes(value) ? prev : [...prev, value]));
+    setDraftSuggestion("");
+  };
+
+  const submitSuggestions = () => {
+    // Fold in whatever is still sitting in the input, so a typed-but-not-added
+    // option isn't silently dropped by tapping Submit.
+    const text = draftSuggestion.trim();
+    const all = text && !picked.includes(text) ? [...picked, text] : picked;
+    if (all.length === 0) return;
+    const fire = () =>
+      void submitItems({
+        vote_type: "ranked_choice",
+        suggestions: all,
+        ranked_choices: null,
+        ranked_choice_tiers: null,
+        is_ranking_abstain: false,
+      });
+    if (!gateOnName(fire)) return;
+    setDraftSuggestion("");
+    fire();
+  };
+
   const submitRanking = () => {
     if (!liveRanking || liveRanking.order.length === 0) return;
     const { order } = liveRanking;
@@ -339,7 +398,20 @@ export default function EventPollCard({
     );
   }, [liveRanking, myVote]);
 
+  // Show Submit while the picks differ from what's submitted (a first-time
+  // suggester always sees it), or while text is still sitting in the input.
+  const suggestionsDirty = useMemo(() => {
+    if (draftSuggestion.trim()) return true;
+    const submitted = myVote?.suggestions ?? [];
+    if (picked.length !== submitted.length) return true;
+    const have = new Set(submitted);
+    return picked.some((o) => !have.has(o));
+  }, [picked, draftSuggestion, myVote]);
+
   const icon = question ? getCategoryIcon(question) : "📊";
+  // While collecting, the actionable clock is the suggestion cutoff, not the
+  // event — that's when the ballot freezes into what everyone ranks.
+  const headerDeadline = (isCollecting && poll?.prephase_deadline) || eventIso;
   const yesNoTotal = (results?.yes_count ?? 0) + (results?.no_count ?? 0);
   const binaryTotal =
     firstRoundCount(results, options[0] ?? "") + firstRoundCount(results, options[1] ?? "");
@@ -357,7 +429,7 @@ export default function EventPollCard({
           <span className="text-gray-400 dark:text-gray-500">Add options ›</span>
         ) : (
           <SimpleCountdown
-            deadline={eventIso}
+            deadline={headerDeadline}
             compact
             blankOnExpire
             colorClass="text-blue-600 dark:text-blue-400"
@@ -438,13 +510,135 @@ export default function EventPollCard({
         </div>
       )}
 
-      {/* MORE options: the full drag-to-rank ballot, expand-animated. */}
+      {/* MORE options (or none yet): the ballot, expand-animated. */}
       {expandable && question && (
         <div
           className="grid transition-[grid-template-rows] duration-300 ease-in-out"
           style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
         >
           <div className="min-h-0 overflow-hidden">
+            {isCollecting ? (
+            <div className="pt-2.5">
+              <p className="mb-1.5 px-1 text-center text-xs text-gray-500 dark:text-gray-400">
+                {proposed.length > 0
+                  ? "Tap to second an option, or add your own"
+                  : "Add the first option — everyone ranks them at the cutoff"}
+              </p>
+              {proposed.length > 0 && (
+                <ul className="space-y-1.5">
+                  {proposed.map((sug) => {
+                    const on = pickedSet.has(sug.option);
+                    return (
+                      <li key={sug.option}>
+                        <button
+                          type="button"
+                          onClick={() => togglePicked(sug.option)}
+                          disabled={submitting}
+                          aria-pressed={on}
+                          className={`flex w-full items-center gap-2 rounded-2xl border px-3 py-2 text-left transition disabled:opacity-60 ${
+                            on
+                              ? "border-green-500 bg-green-50 dark:border-green-500 dark:bg-green-900/25"
+                              : "border-gray-200 bg-white active:bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40 dark:active:bg-gray-700/60"
+                          }`}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                              on
+                                ? "border-green-600 bg-green-600 dark:border-green-500 dark:bg-green-500"
+                                : "border-gray-300 dark:border-gray-600"
+                            }`}
+                          >
+                            {on && (
+                              <svg className="h-3 w-3 text-white" fill="none" stroke="currentColor" strokeWidth={4} viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-sm text-gray-900 dark:text-gray-100">
+                            {sug.option}
+                          </span>
+                          <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                            {sug.count}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {/* Picks that aren't on the board yet (typed this session). */}
+              {picked.filter((o) => !proposed.some((p) => p.option === o)).length > 0 && (
+                <ul className="mt-1.5 space-y-1.5">
+                  {picked
+                    .filter((o) => !proposed.some((p) => p.option === o))
+                    .map((o) => (
+                      <li
+                        key={o}
+                        className="flex items-center gap-2 rounded-2xl border border-green-500 bg-green-50 px-3 py-2 dark:border-green-500 dark:bg-green-900/25"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-sm text-gray-900 dark:text-gray-100">
+                          {o}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => togglePicked(o)}
+                          disabled={submitting}
+                          aria-label={`Remove ${o}`}
+                          className="shrink-0 text-gray-400 hover:text-red-500 dark:text-gray-500"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+              <div className="mt-1.5 flex items-center gap-2">
+                <input
+                  value={draftSuggestion}
+                  onChange={(e) => setDraftSuggestion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addDraftSuggestion();
+                    }
+                  }}
+                  disabled={submitting}
+                  placeholder="Add an option…"
+                  aria-label="Add an option"
+                  className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900/40 dark:placeholder:text-gray-500"
+                />
+                <button
+                  type="button"
+                  onClick={addDraftSuggestion}
+                  disabled={submitting || !draftSuggestion.trim()}
+                  className="shrink-0 rounded-2xl border border-gray-200 px-3 py-2 text-sm text-gray-600 transition active:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:active:bg-gray-700/60"
+                >
+                  Add
+                </button>
+              </div>
+              {suggestionsDirty ? (
+                <button
+                  type="button"
+                  onClick={submitSuggestions}
+                  disabled={submitting || (picked.length === 0 && !draftSuggestion.trim())}
+                  className="mt-2.5 w-full rounded-2xl bg-blue-600 py-2 font-medium text-white transition active:bg-blue-700 disabled:opacity-50"
+                >
+                  {submitting
+                    ? "Submitting…"
+                    : myVote?.suggestions?.length
+                      ? "Update"
+                      : "Submit"}
+                </button>
+              ) : myVote?.suggestions?.length ? (
+                <p className="mt-2 text-center text-xs text-gray-400 dark:text-gray-500">
+                  Your options are in — tap to change them
+                </p>
+              ) : null}
+            </div>
+            ) : (
             <div className="pt-2.5">
               <p className="mb-1.5 px-1 text-center text-xs text-gray-500 dark:text-gray-400">
                 Drag to rank, most preferred first
@@ -485,6 +679,7 @@ export default function EventPollCard({
                 ) : null
               )}
             </div>
+            )}
           </div>
         </div>
       )}
