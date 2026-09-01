@@ -296,6 +296,11 @@ function EventCard({
   );
 }
 
+/** The Suggested chip's own chrome around its icon run: px-2.5 either side
+ *  plus the gap-1 after the label (10 + 10 + 4). The fit check has to clear
+ *  it or the last glyph sits flush against the rounded edge. */
+const SUGGESTED_CHIP_PAD_PX = 24;
+
 /** The glyph shown inside an activity's circle: its emoji, else the first
  *  letter of its name (uppercased). */
 function activitySymbol(name: string, emoji: string | null): string {
@@ -326,6 +331,44 @@ function SlotCardImpl({
   // is the last circle of the pattern rather than an outlier beside it.
   const layout = useMemo(() => clusterLayout(activities.length + 1), [activities.length]);
   const plusPosition = layout.positions[activities.length];
+
+  // How many of the Suggested chip's icons FIT. The chip shrink-wraps its
+  // content, so it can't be its own measuring track — mutating the icon count
+  // would resize it and re-trigger the measure (the SingleLineVoters
+  // feedback-loop trap). Measure instead against the COLUMN, whose width is
+  // set by the row, and against a hidden full-width copy of the chip that
+  // never clips. Result: we render only whole icons; the last one is never
+  // sliced in half.
+  const suggestedColRef = useRef<HTMLDivElement | null>(null);
+  const suggestedProbeRef = useRef<HTMLSpanElement | null>(null);
+  const [suggestedFit, setSuggestedFit] = useState(suggested.length);
+  const suggestedKey = suggested.map((x) => `${x.emoji ?? ""}${x.name}`).join("|");
+  useLayoutEffect(() => {
+    const col = suggestedColRef.current;
+    const probe = suggestedProbeRef.current;
+    if (!col || !probe || suggested.length === 0) return;
+    const measure = () => {
+      const avail = col.clientWidth;
+      if (avail <= 0) return;
+      const left = probe.getBoundingClientRect().left;
+      const icons = probe.querySelectorAll<HTMLElement>("[data-sugg-icon]");
+      let fit = 0;
+      for (const icon of icons) {
+        // The chip's own right padding has to clear too, or the last glyph
+        // sits flush against the rounded edge.
+        if (icon.getBoundingClientRect().right - left + SUGGESTED_CHIP_PAD_PX > avail) break;
+        fit += 1;
+      }
+      // Never drop to zero: the chip is the only way into the suggestions
+      // modal, so keep one icon even on an implausibly narrow row.
+      setSuggestedFit(Math.max(1, fit));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(col);
+    return () => ro.disconnect();
+  }, [suggestedKey, suggested.length]);
+  const suggestedShown = suggested.slice(0, suggestedFit);
 
   return (
     // The row sits in a borderless card in the PAGE background color, lifted
@@ -448,7 +491,10 @@ function SlotCardImpl({
             since it's about interests. The column carries no bottom padding,
             so the chip bottoms out level with the last event card in the left
             column and both get the card's own py-2 beneath them. */}
-        <div className="flex-1 min-w-0 flex flex-col items-center pl-3 pt-1">
+        <div
+          ref={suggestedColRef}
+          className="relative flex-1 min-w-0 flex flex-col items-center pl-3 pt-1"
+        >
           {/* Every circle is absolutely placed from the hex layout, so the box
               only has to reserve the cluster's measured size. The wrapper takes
               the slack so the cluster stays centered above the chip. */}
@@ -507,25 +553,41 @@ function SlotCardImpl({
               silence (✕) act immediately. It only exists while something is
               left to act on — everything added or silenced → gone. */}
           {suggested.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onOpenSuggested(slot)}
-              aria-label="Suggested activities"
-              className="mt-1.5 shrink-0 flex max-w-full items-center gap-1 rounded-2xl bg-[var(--playlist-surface)] px-2.5 py-1 active:opacity-80 transition-opacity"
-            >
-              <span className="shrink-0 text-[9.5px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                Suggested
+            <>
+              <button
+                type="button"
+                onClick={() => onOpenSuggested(slot)}
+                aria-label="Suggested activities"
+                className="mt-1.5 shrink-0 flex max-w-full items-center gap-1 rounded-2xl bg-[var(--playlist-surface)] px-2.5 py-1 active:opacity-80 transition-opacity"
+              >
+                <span className="shrink-0 text-[9.5px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                  Suggested
+                </span>
+                {/* No leading-none here: emoji draw taller than a 1em line box,
+                    and the overflow-hidden was shaving their tops and bottoms.
+                    A normal line height gives the glyphs headroom. Only whole
+                    icons are rendered (see suggestedFit), so overflow-hidden is
+                    just a guard for the frame before a re-measure lands — the
+                    rest of the list is one tap away in the modal. */}
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-[15px] leading-normal">
+                  {suggestedShown.map((s) => activitySymbol(s.name, s.emoji ?? null)).join(" ")}
+                </span>
+              </button>
+              {/* The measuring copy: every icon, never clipped, never shown. */}
+              <span
+                ref={suggestedProbeRef}
+                aria-hidden="true"
+                className="pointer-events-none absolute whitespace-nowrap text-[15px] leading-normal opacity-0"
+                style={{ left: 0, top: 0, visibility: "hidden" }}
+              >
+                <span className="text-[9.5px] font-medium uppercase tracking-wide">Suggested</span>
+                {suggested.map((sug, i) => (
+                  <span key={`${sug.name}#${i}`} data-sugg-icon>
+                    {`${i === 0 ? " " : " "}${activitySymbol(sug.name, sug.emoji ?? null)}`}
+                  </span>
+                ))}
               </span>
-              {/* No leading-none here: emoji draw taller than a 1em line box,
-                  and the overflow-hidden was shaving their tops and bottoms.
-                  A normal line height gives the glyphs headroom; overflow then
-                  only crops horizontally. Plain clip, no ellipsis — a "…"
-                  after a row of emoji reads as noise, and the modal shows the
-                  full list anyway. */}
-              <span className="min-w-0 overflow-hidden whitespace-nowrap text-[15px] leading-normal">
-                {suggested.map((s) => activitySymbol(s.name, s.emoji ?? null)).join(" ")}
-              </span>
-            </button>
+            </>
           )}
         </div>
       </div>
