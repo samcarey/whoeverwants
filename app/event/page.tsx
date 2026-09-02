@@ -9,13 +9,23 @@
  * wanting to go (You + each confirmed person). The action sits right under
  * the title block (above "Who's in") and is where cancelling lives: "Back
  * Out" when confirmed (the playlist card deliberately has no cancel),
- * "Confirm" when joinable, a dead "Full" otherwise.
+ * "I'm In" when joinable, a dead "Full" otherwise.
+ *
+ * The join label is "I'm In", NOT "Confirm" — the tap is a CONDITIONAL
+ * commitment, not a ratification. On a fresh card there's no party yet (the
+ * tap mints it), and whether it happens is decided by everyone else: `met`
+ * only flips once the confirmed set satisfies every member's conditions, so
+ * you sit in Pending until then. It's revocable (Back Out) and movable
+ * (confirming another party of the same key moves you; ranking demotes you to
+ * Backup) — none of which "Confirm" implies. It also pairs in register with
+ * "Back Out" and keeps `Confirm` meaning what it means everywhere else in the
+ * app (ConfirmationModal's destructive-action verb). Don't rename it back.
  *
  * Everything is re-derived from the same polled `/api/slots/events` list the
  * playlist uses, so the page tracks live changes (someone filling the party
  * flips the button to Full with no refresh). If the targeted party dissolves
  * (e.g. the viewer backs out of a party of one) the page falls back to the
- * key's fresh card, so backing out flows straight into "Confirm again".
+ * key's fresh card, so backing out flows straight into "I'm In again".
  *
  * Back button + swipe-back → home (mirrors /explore's gesture + HeaderPortal
  * chrome; the template's fallback header is suppressed via isEventPage).
@@ -151,7 +161,7 @@ function EventPageInner() {
 
   // The card being viewed: the named party when it still exists, else the
   // viewer's own party of this key, else the key's fresh card — so a Back Out
-  // that dissolves a party lands on "Confirm again" instead of a dead end.
+  // that dissolves a party lands on "I'm In again" instead of a dead end.
   const ev = useMemo(() => {
     const matching = events.filter((e) => e.day === day && e.activity.trim().toLowerCase() === key);
     return (
@@ -387,7 +397,7 @@ function EventPageInner() {
                     onClick={() => void setConfirmed(true)}
                     className="w-full rounded-2xl bg-blue-600 py-2.5 font-medium text-white transition active:bg-blue-700 disabled:opacity-50"
                   >
-                    Confirm
+                    I&apos;m In
                   </button>
                 ) : short ? (
                   <div className="w-full rounded-2xl bg-amber-50 py-2.5 text-center font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">

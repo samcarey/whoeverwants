@@ -171,14 +171,9 @@ export default function PlaylistTab() {
     };
   }, [loadEvents]);
 
-  // Confirm (the card's only in-place action — cancelling lives on the event
-  // page as "Back Out"). The server is the real gate, and one confirm can
-  // move SEVERAL cards (a fresh card mints a party, switching parties changes
-  // two), so just re-pull the whole list either way and let the refreshed
-  // flags drive every pill. A 409 "Full" race lands the same way: the refetch
-  // shows the Full state.
-  // Tapping a card opens the event's own page (people list, your conditions,
-  // Back Out). Scroll is saved first so back-nav lands where you left.
+  // Cards have NO in-place action — tapping one opens the event's own page,
+  // where joining ("I'm In") and cancelling ("Back Out") both live. Scroll is
+  // saved first so back-nav lands where you left.
   const router = useRouter();
   const openEvent = useCallback(
     (ev: SlotEvent) => {

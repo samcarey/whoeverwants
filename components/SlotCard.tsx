@@ -137,8 +137,8 @@ function useDiscFit(total: number) {
 }
 
 /** One proposed event: a tiny two-line card. Tapping the CARD opens the
- *  event's own page (people list, your conditions, Confirm / Back Out); the
- *  right-side pill is a pure status indicator — NO in-card Confirm button:
+ *  event's own page (people list, your conditions, I'm In / Back Out); the
+ *  right-side pill is a pure status indicator — NO in-card join button:
  *    - joinable            → no pill (tap the card to join on its page),
  *    - confirmed + met     → GREEN card, "You're going!" pill (indicator),
  *    - confirmed + standby → AMBER card, "Backup" pill — the viewer ranked
@@ -252,7 +252,7 @@ function EventCard({
             )}
           </div>
           {/* Pills are pure indicators — the card tap handles navigation,
-              and Confirm lives on the event page. (Line 3, when an attached
+              and "I'm In" lives on the event page. (Line 3, when an attached
               poll started, renders below this row.) */}
           {going ? (
             <span className="shrink-0 whitespace-nowrap rounded-full bg-green-600 px-2.5 py-0.5 text-[11.5px] font-medium text-white">
@@ -448,9 +448,10 @@ function SlotCardImpl({
               nesting indent — they're this window's main content, not a
               sub-item of the chip). Each is a tiny two-line card — title
               @ time over the confirmed people's discs — with the
-              right-side pill (Confirm / You're going! / Pending / Full);
-              tapping the card opens the event's own page, where Back Out
-              lives. A met event YOU are in goes bold + green; a met event
+              right-side status pill (You're going! / Backup / Pending /
+              Full; joinable events get no pill); tapping the card opens the
+              event's own page, where "I'm In" and Back Out live. A met
+              event YOU are in goes bold + green; a met event
               you're locked out of is grey. */}
           {/* contain: inline-size takes the cards OUT of the column's own
               width calculation. They fill the column, so without it the column
