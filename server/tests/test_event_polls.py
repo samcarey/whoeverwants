@@ -308,12 +308,14 @@ class TestPollOptionsRoundTrip:
             client,
             browser_id=bid,
             day_time_windows=_dtw(_day(3)),
-            activities=[{"name": act, "poll_options": _opts(deadline="2h", suggestions="event:1d")}],
+            activities=[
+                {"name": act, "poll_options": _opts(deadline="2h", suggestions="deadline:1d")}
+            ],
         )
         po = _slots(client, browser_id=bid)[0]["activities"][0]["poll_options"]
         assert po == {
             "deadline": "2h",
-            "suggestions": "event:1d",
+            "suggestions": "deadline:1d",
             "winner_method": "consensus",
             "timezone": "UTC",
         }
@@ -342,6 +344,21 @@ class TestPollOptionsRoundTrip:
         assert po["suggestions"] == "none"
         assert po["winner_method"] == "consensus"
         assert "timezone" not in po
+
+    def test_retired_before_event_cutoff_falls_back(self, client):
+        # "event:" was a valid base until the before-event cutoffs were
+        # dropped; a caller still sending one gets the default, not a phase
+        # the editor can no longer show.
+        bid = str(uuid.uuid4())
+        act = _act("Darts")
+        _create_slot(
+            client,
+            browser_id=bid,
+            day_time_windows=_dtw(_day(3)),
+            activities=[{"name": act, "poll_options": _opts(suggestions="event:1d")}],
+        )
+        po = _slots(client, browser_id=bid)[0]["activities"][0]["poll_options"]
+        assert po["suggestions"] == "none"
 
     def test_options_survive_a_poll_being_detached(self, client):
         # They're the activity's rules, not the draft's — reattaching a poll
@@ -481,7 +498,7 @@ class TestStartedPollSuggestions:
                 {
                     "name": act,
                     "poll_draft": _ranked_draft(),
-                    "poll_options": _opts(deadline="event_start", suggestions="event:2h"),
+                    "poll_options": _opts(deadline="event_start", suggestions="deadline:2h"),
                 }
             ],
         )
@@ -517,12 +534,15 @@ class TestStartedPollSuggestions:
         assert _parse(poll["response_deadline"]) == _at(day, "07:00")
         assert _parse(poll["prephase_deadline"]) == _at(day, "06:00")
 
-    def test_suggestions_cannot_outlast_voting(self, client):
-        # "1 hour before event" with voting closing 4 days before it would put
-        # the cutoff after the deadline — clamped to just inside it.
+    def test_cutoff_always_lands_before_the_deadline(self, client):
+        # Anchoring to the deadline makes the pair well-ordered by
+        # construction — the reason the before-event bases were dropped. Even
+        # the longest lead stacked on the longest deadline stays inside it.
+        # The day is far enough out that BOTH still land in the future (a
+        # cutoff already past is dropped, which would mask the ordering).
         bid = str(uuid.uuid4())
         act = _act("Picnic")
-        day = _day(6)
+        day = _day(10)
         _create_slot(
             client,
             browser_id=bid,
@@ -531,7 +551,7 @@ class TestStartedPollSuggestions:
                 {
                     "name": act,
                     "poll_draft": _ranked_draft(),
-                    "poll_options": _opts(deadline="4d", suggestions="event:1h"),
+                    "poll_options": _opts(deadline="4d", suggestions="deadline:4d"),
                 }
             ],
         )
@@ -539,7 +559,27 @@ class TestStartedPollSuggestions:
         deadline = _parse(poll["response_deadline"])
         prephase = _parse(poll["prephase_deadline"])
         assert deadline == _at(day, "09:00") - timedelta(days=4)
-        assert prephase == deadline - timedelta(minutes=1)
+        assert prephase == deadline - timedelta(days=4)
+        assert prephase < deadline
+
+    def test_stored_before_event_cutoff_starts_no_phase(self):
+        # The started-poll path reads the stored blob RAW (no sanitizer), so it
+        # has to reject a retired base itself — otherwise a row written before
+        # the before-event cutoffs were dropped would keep opening a phase the
+        # editor now shows as "Do not allow", with server and FE disagreeing
+        # about the same activity. Tested directly: reaching this through the
+        # API would need a row the API can no longer write.
+        from datetime import datetime, timezone
+
+        from services.slot_events import _event_poll_deadlines
+
+        day = _day(4)
+        now = datetime.now(timezone.utc)
+        base = {"deadline": "event_start", "winner_method": "consensus", "timezone": "UTC"}
+        _, live = _event_poll_deadlines(day, 9 * 60, {**base, "suggestions": "deadline:2h"}, now)
+        assert live is not None, "a live base still opens the phase"
+        _, retired = _event_poll_deadlines(day, 9 * 60, {**base, "suggestions": "event:2h"}, now)
+        assert retired is None
 
     def test_yes_no_ignores_suggestions(self, client):
         bid = str(uuid.uuid4())
@@ -553,7 +593,7 @@ class TestStartedPollSuggestions:
                 {
                     "name": act,
                     "poll_draft": _yes_no_draft(),
-                    "poll_options": _opts(suggestions="event:2h"),
+                    "poll_options": _opts(suggestions="deadline:2h"),
                 }
             ],
         )

@@ -1254,7 +1254,11 @@ def _event_poll_deadlines(day: str, start_min: int | None, options: dict | None,
     the phase at all."""
     from datetime import timedelta  # noqa: PLC0415
 
-    from services.slots import DEFAULT_POLL_OPTIONS, POLL_LEAD_MINUTES  # noqa: PLC0415
+    from services.slots import (  # noqa: PLC0415
+        DEFAULT_POLL_OPTIONS,
+        POLL_LEAD_MINUTES,
+        POLL_SUGGESTION_BASES,
+    )
 
     if not isinstance(options, dict) or start_min is None:
         return (None, None)
@@ -1279,15 +1283,16 @@ def _event_poll_deadlines(day: str, start_min: int | None, options: dict | None,
     if cutoff != "none":
         base_key, _, lead_key = cutoff.partition(":")
         lead = POLL_LEAD_MINUTES.get(lead_key)
-        # "before deadline" with no surviving deadline falls back to the event
-        # start — the only anchor left.
-        anchor = deadline if (base_key == "deadline" and deadline) else start
-        if lead:
-            prephase = anchor - timedelta(minutes=lead)
-        # Suggestions can't outlast voting (mirrors _insert_poll's own cap for
-        # the relative-minutes form).
-        if prephase and deadline and prephase >= deadline:
-            prephase = deadline - timedelta(minutes=1)
+        # The whitelist is checked HERE, not just in the save-time sanitizer:
+        # this reads the stored blob raw, so a row written before a base was
+        # retired would otherwise keep starting a phase the editor no longer
+        # offers — the server saying yes while the FE shows "Do not allow".
+        if base_key in POLL_SUGGESTION_BASES and lead:
+            # No surviving deadline (already past) leaves the event start as
+            # the only anchor. The cutoff is always a lead time BEFORE the
+            # deadline, so the pair is well-ordered by construction — no clamp
+            # needed.
+            prephase = (deadline or start) - timedelta(minutes=lead)
         if prephase and prephase <= now:
             prephase = None
     return (deadline, prephase)

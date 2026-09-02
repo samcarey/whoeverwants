@@ -194,35 +194,34 @@ export function pollSuggestionRows(query: string): PollSuggestionRow[] {
 // ---------------------------------------------------------------------------
 
 /** Lead times both the deadline and the suggestions cutoff are drawn from.
- *  MIRRORED server-side in services/slots.POLL_LEAD_MINUTES — the two
- *  whitelists must stay in lockstep or a saved value silently falls back to
- *  its default. */
-export const POLL_LEAD_OPTIONS = [
-  { value: "1h", label: "1 hour" },
-  { value: "2h", label: "2 hours" },
-  { value: "8h", label: "8 hours" },
-  { value: "1d", label: "1 day" },
-  { value: "2d", label: "2 days" },
-  { value: "4d", label: "4 days" },
-] as const;
+ *  Spelled with the app's abbreviated-unit convention (no space between the
+ *  number and the unit — matches `compactDurationSince` and the relative-day
+ *  labels), so a lead's value IS its label. MIRRORED server-side in
+ *  services/slots.POLL_LEAD_MINUTES — the two whitelists must stay in
+ *  lockstep or a saved value silently falls back to its default. */
+export const POLL_LEAD_OPTIONS = ["1h", "2h", "8h", "1d", "2d", "4d"] as const;
 
 /** When voting closes: at the event, or that far before it. */
 export const POLL_DEADLINE_OPTIONS: { value: string; label: string }[] = [
   { value: "event_start", label: "Event start" },
-  ...POLL_LEAD_OPTIONS.map((o) => ({ value: o.value, label: `${o.label} before event` })),
+  ...POLL_LEAD_OPTIONS.map((v) => ({ value: v, label: `${v} before event` })),
 ];
 
-/** When the suggestion phase closes — measured off the voting deadline or off
- *  the event itself, or no suggestions at all. */
+/** When the suggestion phase closes — that far before the voting deadline, or
+ *  no suggestions at all.
+ *
+ *  There is deliberately NO "before event" base. It was the only way to
+ *  express a cutoff that lands AFTER voting closes, which is incoherent
+ *  (nothing left to vote on) and forced a clamp server-side plus a warning
+ *  here. Anchoring to the deadline makes the pair well-ordered by
+ *  construction. If it ever comes back, restore
+ *  `services.slots.POLL_SUGGESTION_BASES` in lockstep — the server treats a
+ *  base outside that set as "no suggestion phase". */
 export const POLL_SUGGESTION_OPTIONS: { value: string; label: string }[] = [
   { value: "none", label: "Do not allow" },
-  ...POLL_LEAD_OPTIONS.map((o) => ({
-    value: `deadline:${o.value}`,
-    label: `${o.label} before deadline`,
-  })),
-  ...POLL_LEAD_OPTIONS.map((o) => ({
-    value: `event:${o.value}`,
-    label: `${o.label} before event`,
+  ...POLL_LEAD_OPTIONS.map((v) => ({
+    value: `deadline:${v}`,
+    label: `${v} before deadline`,
   })),
 ];
 
@@ -275,39 +274,22 @@ export function pollOptionsToWire(o: ActivityPollOptions): ActivityPollOptions {
   return { ...o, timezone: tz };
 }
 
-/** True when the chosen suggestion cutoff would land at/after voting closes —
- *  the server clamps it to just before the deadline, and the editor says so
- *  rather than letting the pair read as a contradiction. Only decidable when
- *  both are measured from the same anchor (the event). */
-export function pollSuggestionsAfterDeadline(o: ActivityPollOptions): boolean {
-  if (o.suggestions === "none") return false;
-  const [base, lead] = o.suggestions.split(":");
-  if (base !== "event") return false;
-  const minutes = (v: string) =>
-    ({ "1h": 60, "2h": 120, "8h": 480, "1d": 1440, "2d": 2880, "4d": 5760 })[v] ?? 0;
-  const deadlineLead = o.deadline === "event_start" ? 0 : minutes(o.deadline);
-  return minutes(lead) <= deadlineLead;
-}
-
 /** Plain-language recap of what the options do, for the editor's footer —
  *  the settings are lead times off an event that hasn't been scheduled yet,
- *  so spelling out the consequence beats reading two dropdowns. */
+ *  so spelling out the consequence beats reading two dropdowns. Echoes the
+ *  abbreviated leads the dropdowns show, so the recap and the picked values
+ *  read as the same thing. */
 export function pollOptionsSummary(o: ActivityPollOptions): string[] {
-  const lead = (value: string) =>
-    POLL_LEAD_OPTIONS.find((l) => l.value === value)?.label ?? value;
   const lines = [
     o.deadline === "event_start"
       ? "Voting closes when the event starts."
-      : `Voting closes ${lead(o.deadline)} before the event.`,
+      : `Voting closes ${o.deadline} before the event.`,
   ];
   if (o.suggestions === "none") {
     lines.push("Options are fixed — voters can't add their own.");
-  } else if (pollSuggestionsAfterDeadline(o)) {
-    lines.push("Suggestions would close after voting does, so they close with it.");
   } else {
-    const [base, value] = o.suggestions.split(":");
-    const anchor = base === "deadline" ? "voting deadline" : "event";
-    lines.push(`Anyone can add options until ${lead(value)} before the ${anchor}.`);
+    const lead = o.suggestions.split(":")[1];
+    lines.push(`Anyone can add options until ${lead} before the voting deadline.`);
   }
   return lines;
 }

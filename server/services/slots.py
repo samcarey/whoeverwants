@@ -66,8 +66,14 @@ POLL_LEAD_MINUTES = {"1h": 60, "2h": 120, "8h": 480, "1d": 1440, "2d": 2880, "4d
 # Voting closes at the event's start, or that many minutes before it.
 POLL_DEADLINE_CHOICES = {"event_start", *POLL_LEAD_MINUTES}
 # What a suggestion cutoff is measured from ("deadline:2h" = 2h before voting
-# closes, "event:1d" = a day before the event); "none" = no suggestion phase.
-POLL_SUGGESTION_BASES = {"deadline", "event"}
+# closes); "none" = no suggestion phase. The voting deadline is the ONLY base:
+# a cutoff measured off the event start could land after voting closed, which
+# is incoherent. Anything outside this set reads as "none" on BOTH sides — the
+# FE catalog (lib/activityPollDraft.POLL_SUGGESTION_OPTIONS) falls back to the
+# default, and _event_poll_deadlines starts no phase for it — so a row saved
+# before the "before event" bases were dropped degrades the same way
+# everywhere instead of diverging.
+POLL_SUGGESTION_BASES = {"deadline"}
 POLL_WINNER_METHODS = {"favorite", "consensus"}
 # Defaults for an activity saved before migration 161 / by a raw-API caller:
 # the pre-161 behavior (no deadline, no suggestions). A NEW activity saved by
