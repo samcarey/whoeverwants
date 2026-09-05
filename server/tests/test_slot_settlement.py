@@ -173,13 +173,16 @@ def test_monotone_pool_settles_on_first_confirm(client):
 
 def test_unsettled_card_reports_the_provisional_split(client):
     """Before settlement `met` reads off the provisional split: two in who
-    fit together → both see "on"; a third whose max is 1 sees Pending."""
+    fit together see "on" while the key is still open — a capped 4th makes
+    the pool non-monotone, and a compatible undecided 3rd keeps it unsettled
+    (a latecomer who could still share a party is exactly what holds it)."""
     day = _day(6)
     act = _act("Sauna")
-    a, b, loner = (str(uuid.uuid4()) for _ in range(3))
+    a, b, c, capped = (str(uuid.uuid4()) for _ in range(4))
     _mk(client, a, day, act)
     _mk(client, b, day, act)
-    _mk(client, loner, day, act, max_people=1)
+    _mk(client, c, day, act)
+    _mk(client, capped, day, act, max_people=2)
     _confirm(client, browser_id=a, day=day, activity=act)
     card = _confirm(client, browser_id=b, day=day, activity=act).json()
     assert card["settled"] is False and card["met"] and card["confirmed_count"] == 2
