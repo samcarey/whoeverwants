@@ -255,6 +255,15 @@ export interface SlotEvent {
    *  events (migration 160): 1 = top choice, equal ranks = LINKED (attending
    *  both regardless of overlap). Null/absent when never ordered. */
   viewer_pref_rank?: number | null;
+  /** SETTLEMENT (migration 162). False while the key is UNSETTLED: everyone
+   *  who tapped is pooled on this one card, committed to the activity rather
+   *  than to a party — so nobody is ever "Full" here — and the split into
+   *  parties happens at `settles_at` (UTC ISO) or sooner once nobody left
+   *  undecided could change it. `met` then reads as "you're in a party
+   *  that's on" (viewer confirmed) / "some party is on". Settled (or
+   *  pre-162) cards: true / null. */
+  settled?: boolean;
+  settles_at?: string | null;
 }
 
 export interface SlotEventPoll {
@@ -298,9 +307,18 @@ export async function apiSetEventConfirmation(
   confirmed: boolean,
   eventId: string | null,
 ): Promise<SlotEvent> {
+  // The browser's zone anchors the key's settlement deadline (migration 162)
+  // when this confirm is the first on the key — same reason pollOptionsToWire
+  // stamps it: the event's day/times are wall clock with no zone.
+  let timezone: string | null = null;
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    // Keep null — the server reads that as UTC.
+  }
   return slotFetch<SlotEvent>("/events/confirmation", {
     method: "POST",
-    body: JSON.stringify({ day, activity, confirmed, event_id: eventId }),
+    body: JSON.stringify({ day, activity, confirmed, event_id: eventId, timezone }),
   });
 }
 

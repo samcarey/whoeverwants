@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE slot_events DROP COLUMN IF EXISTS settle_tz;
+ALTER TABLE slot_events DROP COLUMN IF EXISTS settled_at;
+
+COMMIT;

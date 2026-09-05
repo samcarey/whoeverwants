@@ -281,7 +281,11 @@ function EventPageInner() {
   const pending = !!ev && ev.viewer_confirmed && !ev.met && !backup;
   // NEAR-MISS: no viable gathering yet — "Needs N more" instead of Full.
   const short = !!ev && !ev.viewer_confirmed && (ev.needed ?? 0) > 0;
-  const full = !!ev && !ev.viewer_confirmed && !ev.can_confirm && !short;
+  // UNSETTLED (migration 162): confirmations are pooled and nobody is gated
+  // against the people already in, so there is no Full to show — only the
+  // settlement note below the action.
+  const unsettled = !!ev && ev.settled === false;
+  const full = !!ev && !ev.viewer_confirmed && !ev.can_confirm && !short && !unsettled;
   const statusPill = going ? (
     <span className="rounded-full bg-green-600 px-3 py-1 text-sm font-medium text-white">You&apos;re going!</span>
   ) : backup ? (
@@ -408,6 +412,25 @@ function EventPageInner() {
                   <div className="w-full rounded-2xl bg-gray-100 py-2.5 text-center font-medium text-gray-400 dark:bg-gray-800 dark:text-gray-500">
                     Full — someone would be left out if you joined
                   </div>
+                )}
+                {/* Settlement note (migration 162): the pooled-confirmations
+                    state, spelled out — who goes with whom is decided later,
+                    and "You're going!" above means a group that works for
+                    you exists in the current split. */}
+                {unsettled && ev.settles_at && (
+                  <p className="mt-2 rounded-xl bg-gray-50 px-3 py-2 text-[13px] text-gray-600 dark:bg-gray-800/60 dark:text-gray-300">
+                    Everyone who&apos;s in is pooled for now. If people&apos;s limits
+                    mean this has to split into groups, that&apos;s decided in{" "}
+                    <SimpleCountdown
+                      deadline={ev.settles_at}
+                      compact
+                      blankOnExpire
+                      colorClass="text-gray-700 dark:text-gray-200"
+                      numberClass="font-semibold"
+                    />{" "}
+                    — or sooner, once no one else could change it. Nobody gets
+                    squeezed out for tapping late.
+                  </p>
                 )}
               </div>
 

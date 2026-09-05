@@ -5,12 +5,25 @@ partition in event matching (blocked pairs never share a suggested event,
 but each still gets events without the other)."""
 
 import uuid
+
+import pytest
 from datetime import date, timedelta
 
 import psycopg
 
 from services.auth import generate_token, hash_token, normalize_email
 from tests.conftest import TEST_DB_URL, bid_headers
+
+
+@pytest.fixture(autouse=True)
+def _instant_settlement(monkeypatch):
+    """Pin the pre-162 semantics for this suite: with a deadline that is
+    always already past, every key settles on its first confirm, so the party
+    model below (Full / second party / moves) is exercised exactly as before.
+    Deferred settlement has its own suite (test_slot_settlement.py)."""
+    import services.slot_events as se
+
+    monkeypatch.setattr(se, "SETTLE_LEAD_HOURS", 10**6)
 
 
 def _act(base: str) -> str:

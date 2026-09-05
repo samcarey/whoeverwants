@@ -52,6 +52,25 @@ Per-party flags the UI depends on:
                  (deliberately one-level) rule. Equal ranks are LINKED
                  (attending both) and never suppress each other.
 
+SETTLEMENT (migration 162). Tapping "I'm In" commits you to the ACTIVITY
+on that day, not to a party. Every key starts UNSETTLED: confirmations pool
+on one INTAKE row (`slot_events.settled_at IS NULL`) and nobody is gated
+against the people already in — a late joiner can't be squeezed out by
+whoever tapped first. The engine splits the pooled set into parties
+(`_partition`: fewest people left out, then nobody alone, then the largest
+group) only when it is SAFE (`_should_settle`):
+
+  * the whole candidate pool fits one party anyway (growth is monotone — no
+    arrival order can ever cost anyone a seat), which is the common case
+    and settles at once, exactly the old instant behaviour;
+  * or every candidate has confirmed;
+  * or no undecided candidate could share a party with anyone confirmed;
+  * or the deadline — SETTLE_LEAD_HOURS before the earliest start, in the
+    first confirmer's zone (`settle_tz`).
+
+Settled keys run the party model below unchanged; late joiners after
+settlement take a party that fits or mint a fresh one, as before.
+
 Constraint source: the activity's who_with[0] (the editor is
 single-condition), else the legacy activity-level range, else unconstrained.
 Only ID-BEARING who-with refs participate in matching — a name-only ref
@@ -68,6 +87,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from services.slots import _hhmm_to_minutes, _windows_by_day, normalize_activity
 
@@ -78,6 +98,16 @@ logger = logging.getLogger(__name__)
 # from the SEARCH only (confirmed-set math is exact regardless). 2^14 = 16k
 # subset checks worst case.
 MAX_SEARCH_CANDIDATES = 14
+
+# SETTLEMENT (migration 162): how long before the event an unsettled key's
+# parties are decided regardless (the "nobody left who could change it" rule
+# can fire earlier). Module-level so tests can pin it — a huge value makes
+# every key settle on its first confirm (the pre-162 semantics).
+SETTLE_LEAD_HOURS = 24
+# The exact partition search is ~3^n over the confirmed set (memoised set
+# checks keep it to 2^n _set_ok calls); beyond this many confirmed people a
+# greedy split takes over.
+SETTLE_SOLVER_CAP = 12
 # There is NO global headcount floor: each member's own "At Least" minimum
 # (min_people, default 1 = "Just me") is the floor. An event still happens if
 # only one person goes — that's the point of allowing "Me" in the "At Least"
@@ -568,6 +598,23 @@ def _load_confirmations(conn, days: list[str]) -> dict[tuple[str, str], dict[str
     return out
 
 
+def _load_intake(conn, days: list[str]) -> dict[tuple[str, str], dict]:
+    """(day, activity_key) → the key's UNSETTLED intake row (migration 162):
+    {"id", "tz"}. Confirmations there are pooled — parties not yet decided.
+    A key has at most one; a settled key has none."""
+    if not days:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT e.id, e.day::text AS day, LOWER(e.activity) AS key, e.settle_tz
+          FROM slot_events e
+         WHERE e.day = ANY(%(days)s::date[]) AND e.settled_at IS NULL
+        """,
+        {"days": days},
+    ).fetchall()
+    return {(r["day"], r["key"]): {"id": str(r["id"]), "tz": r["settle_tz"]} for r in rows}
+
+
 def _load_ranks(conn, days: list[str]) -> dict[str, dict[str, int]]:
     """event_id → {user_id: pref_rank} for EVERY ranked confirmation on the
     given days (migration 160). Lower = more preferred; EQUAL ranks mean the
@@ -840,6 +887,248 @@ def _party_payload(
     }
 
 
+# ----------------------------------------------------------------------------
+# Settlement (migration 162): pooled confirmations → parties, when it's safe
+# ----------------------------------------------------------------------------
+
+def _pool_is_monotone(
+    cands: dict[str, _Candidate], members: dict[str, set[str]], blocked: dict[str, set[str]]
+) -> bool:
+    """Can EVERY candidate of the key be in one party together (minimums
+    aside)? Then any arrival order just grows that one party — nobody's seat
+    can ever depend on who tapped first — so there is nothing to defer."""
+    return bool(cands) and _set_ok(list(cands.values()), members, blocked, require_min=False)
+
+
+def _partition(
+    confirmed: list[_Candidate], members: dict[str, set[str]], blocked: dict[str, set[str]]
+) -> list[list[_Candidate]]:
+    """Split a confirmed set into valid parties, best first by:
+      1. the most people in a MET party (fewest left out),
+      2. the fewest people alone,
+      3. the largest single party.
+    Exact bitmask DP up to SETTLE_SOLVER_CAP people (set validity memoised
+    per subset, so it's 2^n _set_ok calls), greedy beyond. Singletons are
+    always admissible — everyone lands in exactly one party; whether it's
+    MET (their minimum holds) is what the score counts."""
+    n = len(confirmed)
+    if n == 0:
+        return []
+    if n > SETTLE_SOLVER_CAP:
+        return _partition_greedy(confirmed, members, blocked)
+    valid: dict[int, bool] = {}
+    served: dict[int, int] = {}
+
+    def check(mask: int) -> bool:
+        hit = valid.get(mask)
+        if hit is not None:
+            return hit
+        grp = [confirmed[i] for i in range(n) if mask >> i & 1]
+        ok = len(grp) == 1 or _set_ok(grp, members, blocked, require_min=False)
+        valid[mask] = ok
+        if ok:
+            served[mask] = len(grp) if _set_ok(grp, members, blocked, require_min=True) else 0
+        return ok
+
+    full = (1 << n) - 1
+    best: dict[int, tuple[tuple[int, int, int], list[int]]] = {0: ((0, 0, 0), [])}
+    for mask in range(1, full + 1):
+        low = mask & -mask
+        rest = mask ^ low
+        cur: tuple[tuple[int, int, int], list[int]] | None = None
+        sub = rest
+        while True:
+            g = sub | low
+            if check(g):
+                sc, groups = best[mask ^ g]
+                size = bin(g).count("1")
+                score = (sc[0] + served[g], sc[1] - (1 if size == 1 else 0), max(sc[2], size))
+                if cur is None or score > cur[0]:
+                    cur = (score, groups + [g])
+            if sub == 0:
+                break
+            sub = (sub - 1) & rest
+        best[mask] = cur  # type: ignore[assignment]  # the singleton is always valid
+    _, gmasks = best[full]
+    return [[confirmed[i] for i in range(n) if g >> i & 1] for g in gmasks]
+
+
+def _partition_greedy(
+    confirmed: list[_Candidate], members: dict[str, set[str]], blocked: dict[str, set[str]]
+) -> list[list[_Candidate]]:
+    """Fallback for big pools: tightest maxima first (so a cap-holder anchors
+    a party before it fills past them), each person into the first party
+    that still works, else their own."""
+    order = sorted(confirmed, key=lambda c: (c.max_people is None, c.max_people or 0, c.user_id))
+    groups: list[list[_Candidate]] = []
+    for c in order:
+        for g in groups:
+            if _set_ok(g + [c], members, blocked, require_min=False):
+                g.append(c)
+                break
+        else:
+            groups.append([c])
+    return groups
+
+
+def _settle_deadline(day: str, cands: dict[str, _Candidate], tz_name: str | None):
+    """When an unsettled key's parties get decided regardless: SETTLE_LEAD_HOURS
+    before the earliest start any candidate is free for, read in the first
+    confirmer's zone (UTC when unknown/unset — a slot's times carry no zone,
+    the same anchor problem `_event_poll_deadlines` solves the same way)."""
+    starts = [w[0] for c in cands.values() for w in c.windows]
+    start_min = min(starts) if starts else 0
+    inst = _event_start_utc(day, start_min, tz_name or "UTC") or _event_start_utc(day, start_min, "UTC")
+    return inst - timedelta(hours=SETTLE_LEAD_HOURS)
+
+
+def _should_settle(
+    now,
+    deadline,
+    cands: dict[str, _Candidate],
+    confirmed: set[str],
+    members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
+) -> bool:
+    """Is it safe to turn the pooled confirmations into parties now? Yes when
+    the deadline passed, when growth is monotone for the whole pool, when
+    everyone has confirmed, or when no undecided candidate could ever share a
+    party with anyone confirmed (their arrival can only start a separate
+    party). Deliberately conservative — a pair-wise check, not a search over
+    every subset of latecomers — because a wrong "safe" is the original bug
+    again; the deadline is the backstop."""
+    if now >= deadline:
+        return True
+    if _pool_is_monotone(cands, members, blocked):
+        return True
+    undecided = [cands[u] for u in cands if u not in confirmed]
+    if not undecided:
+        return True
+    conf = [cands[u] for u in confirmed if u in cands]
+    if not conf:
+        return False
+    for u in undecided:
+        for c in conf:
+            if _set_ok([u, c], members, blocked, require_min=False):
+                return False
+    return True
+
+
+def settle_due_keys(conn, days: list[str], now=None) -> list[str]:
+    """Decide the parties of every unsettled key on `days` whose settlement is
+    due (see _should_settle). The intake row keeps the first party; each
+    further party gets a fresh settled row and its confirmations move over
+    (pref_rank rides along — the row is UPDATEd, not re-inserted). Called on
+    every events read and after every confirm — the same write-on-read
+    self-healing the playlist already relies on (dev tiers run no tick).
+    Returns the settled intake ids."""
+    days = sorted({d for d in days if d})
+    if not days:
+        return []
+    intake = _load_intake(conn, days)
+    if not intake:
+        return []
+    now = now or datetime.now(timezone.utc)
+    events = _gather_days(conn, days)
+    gids, uids = _all_ref_group_ids(events)
+    members = _load_memberships(conn, gids, uids)
+    blocked = _load_blocks(conn, uids)
+    confirmations = _load_confirmations(conn, days)
+    settled: list[str] = []
+    for (day, key), row in intake.items():
+        cands = events.get((day, key), {})
+        eid = row["id"]
+        confirmed = {u for u in confirmations.get((day, key), {}).get(eid, set()) if u in cands}
+        if cands and not _should_settle(
+            now, _settle_deadline(day, cands, row["tz"]), cands, confirmed, members, blocked
+        ):
+            continue
+        groups = _partition(sorted((cands[u] for u in confirmed), key=lambda c: c.user_id), members, blocked)
+        conn.execute(
+            "UPDATE slot_events SET settled_at = %(n)s WHERE id = %(e)s::uuid",
+            {"n": now, "e": eid},
+        )
+        for grp in groups[1:]:
+            new = conn.execute(
+                """
+                INSERT INTO slot_events (day, activity, settled_at, settle_tz)
+                SELECT day, activity, %(n)s, settle_tz FROM slot_events WHERE id = %(e)s::uuid
+                RETURNING id
+                """,
+                {"n": now, "e": eid},
+            ).fetchone()
+            conn.execute(
+                """
+                UPDATE slot_event_confirmations SET event_id = %(new)s::uuid
+                 WHERE event_id = %(e)s::uuid AND user_id = ANY(%(us)s::uuid[])
+                """,
+                {"new": str(new["id"]), "e": eid, "us": [c.user_id for c in grp]},
+            )
+        settled.append(eid)
+    return settled
+
+
+def _intake_payload(
+    day: str,
+    cands: dict[str, _Candidate],
+    viewer_id: str,
+    members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
+    *,
+    intake_id: str,
+    confirmed_uids: set[str],
+    standby: set[tuple[str, str]],
+    settles_at,
+) -> dict | None:
+    """The ONE card an unsettled key shows: everyone who tapped is "in" for
+    the activity, pooled. `met` is read off the provisional split —
+    "you're in a party that's on" for a confirmed viewer, "some party is on"
+    otherwise; `can_confirm` only asks whether the viewer could be served by
+    ANY viable gathering (there's no party to be full yet). None when they
+    can't and aren't in — the near-miss card takes over."""
+    viewer = cands[viewer_id]
+    conf_ids = {u for u in confirmed_uids if u in cands}
+    viewer_confirmed = viewer_id in conf_ids
+    active_ids = {u for u in conf_ids if (intake_id, u) not in standby}
+    viewer_standby = viewer_confirmed and viewer_id not in active_ids
+    active = sorted((cands[u] for u in active_ids), key=lambda c: c.user_id)
+    others = [c for c in cands.values() if c.user_id != viewer_id]
+    viable = _preferred_viable_start(viewer, others, members, blocked)
+    if not viewer_confirmed and viable is None:
+        return None
+    groups = _partition(active, members, blocked) if active else []
+    mine = next((g for g in groups if any(c.user_id == viewer_id for c in g)), None)
+    if viewer_confirmed and not viewer_standby:
+        met = mine is not None and _set_ok(mine, members, blocked, require_min=True)
+    else:
+        met = any(_set_ok(g, members, blocked, require_min=True) for g in groups)
+    time_min = _best_start(mine, _common_windows(mine)) if met and mine else viable
+    common = _common_windows(mine) if mine else viewer.windows
+    window = max(common or viewer.windows, key=lambda w: w[1] - w[0]) if (common or viewer.windows) else None
+    freshest = max(cands.values(), key=lambda c: c.freshest)
+    return {
+        "id": intake_id,
+        "day": day,
+        "activity": viewer.display or freshest.display,
+        "emoji": viewer.emoji or freshest.emoji,
+        "time": _minutes_to_hhmm(time_min) if time_min is not None else None,
+        "window": (
+            {"min": _minutes_to_hhmm(window[0]), "max": _minutes_to_hhmm(window[1])}
+            if window
+            else None
+        ),
+        "confirmed_count": len(active),
+        "confirmed_names": sorted((c.name or "Someone") for c in active if c.user_id != viewer_id),
+        "viewer_confirmed": viewer_confirmed,
+        "can_confirm": True if viewer_confirmed else viable is not None,
+        "met": met,
+        "standby": viewer_standby,
+        "needed": 0,
+        "settled": False,
+        "settles_at": settles_at.isoformat() if settles_at else None,
+    }
+
+
 def _cards_for_key(
     day: str,
     cands: dict[str, _Candidate],
@@ -849,6 +1138,7 @@ def _cards_for_key(
     blocked: dict[str, set[str]],
     poll_info: dict | None = None,
     standby: set[tuple[str, str]] = frozenset(),
+    intake: dict | None = None,
 ) -> list[dict]:
     """Every card the viewer sees for one (day, activity): each LIVE party
     (≥1 valid confirmation), plus the fresh empty party exactly when the
@@ -860,6 +1150,23 @@ def _cards_for_key(
     valid = {
         eid: {u for u in uids if u in cands} for eid, uids in parties.items()
     }
+    # UNSETTLED key (migration 162): one pooled card, no party gating.
+    if intake is not None and intake["id"] in parties:
+        conf = valid.get(intake["id"], set())
+        card = _intake_payload(
+            day, cands, viewer_id, members, blocked,
+            intake_id=intake["id"], confirmed_uids=conf, standby=standby,
+            settles_at=_settle_deadline(day, cands, intake["tz"]),
+        )
+        cards = [card] if card is not None else []
+        if not cards:
+            near = _near_miss_payload(day, cands, viewer_id, members, blocked, set(cands) - conf)
+            if near is not None:
+                cards.append(near)
+        if poll_info is not None:
+            for c in cards:
+                c["poll"] = poll_info
+        return cards
     live = {eid: uids for eid, uids in valid.items() if uids}
     attached: set[str] = set().union(*live.values()) if live else set()
     unattached = set(cands) - attached
@@ -953,11 +1260,15 @@ def list_events(conn, *, user_id: str | None) -> list[dict]:
         {"u": user_id},
     ).fetchall()
     days = sorted(r["day"] for r in day_rows)
+    # Write-on-read: any unsettled key whose settlement is due gets its
+    # parties decided now (the playlist's 5s poll is the only clock on dev).
+    settle_due_keys(conn, days)
     events = _gather_days(conn, days)
     gids, uids = _all_ref_group_ids(events)
     members = _load_memberships(conn, gids, uids)
     blocked = _load_blocks(conn, uids)
     confirmations = _load_confirmations(conn, days)
+    intake = _load_intake(conn, days)
     polls = _load_event_polls(conn, days)
     ranks = _load_ranks(conn, days)
     standby = _compute_standby(events, confirmations, ranks, members, blocked)
@@ -966,7 +1277,7 @@ def list_events(conn, *, user_id: str | None) -> list[dict]:
         out.extend(
             _cards_for_key(
                 day, cands, confirmations.get((day, key), {}), user_id, members, blocked,
-                poll_info=polls.get((day, key)), standby=standby,
+                poll_info=polls.get((day, key)), standby=standby, intake=intake.get((day, key)),
             )
         )
     # The viewer's stored preference order (rank; equal = linked) rides on
@@ -1011,6 +1322,7 @@ def set_confirmation(
     activity: str,
     confirmed: bool,
     event_id: str | None = None,
+    timezone_name: str | None = None,
 ) -> dict:
     """Toggle the caller's confirmation for (day, activity), re-validating
     against the CURRENT parties inside this transaction — the FE's flags are
@@ -1021,6 +1333,15 @@ def set_confirmation(
     them, else MINTS a new party — but only when a viable gathering exists
     among the unattached candidates including them (otherwise EventFullError:
     every party is full for them and no second gathering could work).
+
+    UNSETTLED keys (migration 162) take a different path: the caller commits
+    to the ACTIVITY — their confirmation lands on the key's intake row, gated
+    only on "could some viable gathering serve them at all" (never on the
+    people already in). The first confirm of a key mints that intake row
+    (stamped with the caller's zone for the settlement deadline) and
+    `settle_due_keys` decides at once whether it can settle immediately (a
+    pool that fits one party, or a deadline already past) — which is what
+    keeps the common case instant.
 
     A caller holds at most one confirmation per key — confirming a different
     party moves them. Cancelling deletes it, and any party left with zero
@@ -1055,16 +1376,40 @@ def set_confirmation(
         joined = [cands[u] for u in uids_ if (eid, u) not in standby] + [cands[user_id]]
         return _set_ok(joined, members, blocked, require_min=False)
 
+    intake = _load_intake(conn, [day]).get((day, key))
+    others = [c for c in cands.values() if c.user_id != user_id]
+
     target: str | None = None
     if confirmed:
-        if event_id is not None:
+        if intake is not None and (event_id is None or event_id == intake["id"]):
+            # Unsettled: commit to the activity. The only gate is viability.
+            if user_id not in valid.get(intake["id"], set()) and (
+                _preferred_viable_start(cands[user_id], others, members, blocked) is None
+            ):
+                raise EventFullError()
+            target = intake["id"]
+        elif event_id is not None:
             if event_id not in parties:
                 raise NoSuchEventError()
             if user_id not in valid[event_id] and not _may_join(event_id, valid[event_id]):
                 raise EventFullError()
             target = event_id
+        elif not parties:
+            # First confirm of the key: mint its INTAKE row. Whether it can
+            # settle right away is settle_due_keys' call below.
+            if _preferred_viable_start(cands[user_id], others, members, blocked) is None:
+                raise EventFullError()
+            row = conn.execute(
+                """
+                INSERT INTO slot_events (day, activity, settle_tz)
+                VALUES (%(d)s::date, %(a)s, %(tz)s) RETURNING id
+                """,
+                {"d": day, "a": act, "tz": timezone_name},
+            ).fetchone()
+            target = str(row["id"])
         else:
-            # No party named: take the fullest one that works, else mint.
+            # Settled key, no party named: take the fullest one that works,
+            # else mint a fresh (settled) party.
             for eid, uids_ in sorted(valid.items(), key=lambda kv: -len(kv[1])):
                 if user_id in uids_ or _may_join(eid, uids_):
                     target = eid
@@ -1074,8 +1419,11 @@ def set_confirmation(
                 if _preferred_viable_start(cands[user_id], pool, members, blocked) is None:
                     raise EventFullError()
                 row = conn.execute(
-                    "INSERT INTO slot_events (day, activity) VALUES (%(d)s::date, %(a)s) RETURNING id",
-                    {"d": day, "a": act},
+                    """
+                    INSERT INTO slot_events (day, activity, settled_at, settle_tz)
+                    VALUES (%(d)s::date, %(a)s, NOW(), %(tz)s) RETURNING id
+                    """,
+                    {"d": day, "a": act, "tz": timezone_name},
                 ).fetchone()
                 target = str(row["id"])
         # One confirmation per key: moving parties drops the old one. The
@@ -1135,6 +1483,9 @@ def set_confirmation(
         {"d": day, "k": key},
     )
 
+    # A confirm may have completed the pool (everyone in) or been the very
+    # first on a monotone / already-due key — settle whatever is now due.
+    settle_due_keys(conn, [day])
     fresh_confirmations = _load_confirmations(conn, [day])
     fresh_parties = fresh_confirmations.get((day, key), {})
     fresh_standby = _compute_standby(
@@ -1144,10 +1495,15 @@ def set_confirmation(
     cards = _cards_for_key(
         day, cands, fresh_parties, user_id, members, blocked,
         poll_info=poll_info, standby=fresh_standby,
+        intake=_load_intake(conn, [day]).get((day, key)),
     )
-    for card in cards:
-        if confirmed and card["id"] == target:
-            return card
+    if confirmed:
+        for card in cards:
+            if card["viewer_confirmed"]:
+                return card
+        for card in cards:
+            if card["id"] == target:
+                return card
     if cards:
         return cards[0]
     # Candidate but nothing to show (e.g. cancelled and no viable gathering

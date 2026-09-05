@@ -168,7 +168,11 @@ function EventCard({
   const backup = ev.viewer_confirmed && !!ev.standby;
   const going = ev.viewer_confirmed && ev.met && !backup;
   const pending = ev.viewer_confirmed && !ev.met && !backup;
-  const full = !ev.viewer_confirmed && !ev.can_confirm;
+  // UNSETTLED (migration 162): confirmations are pooled, nobody is gated
+  // against the people already in — so "Full" can't apply; the card carries
+  // a "groups settle in …" line instead.
+  const unsettled = ev.settled === false;
+  const full = !ev.viewer_confirmed && !ev.can_confirm && !unsettled;
   // Everyone confirmed except the viewer (the server already leaves them out
   // of confirmed_names; confirmed_count counts them — unless the viewer is
   // standby, in which case the count already excludes them).
@@ -272,6 +276,24 @@ function EventCard({
             </span>
           ) : null}
         </div>
+        {/* Settlement line (migration 162): while the key is unsettled the
+            people in are pooled and the split into groups is still to come —
+            say when, so a "3 in" that later becomes two cards isn't a
+            surprise. The countdown is the deadline; it can settle earlier. */}
+        {unsettled && ev.settles_at && (
+          <span className="flex items-center gap-1 min-w-0 text-[11px] font-normal text-gray-500 dark:text-gray-400">
+            <span className="min-w-0 truncate">Groups settle in</span>
+            <span className="ml-auto shrink-0 tabular-nums">
+              <SimpleCountdown
+                deadline={ev.settles_at}
+                compact
+                blankOnExpire
+                colorClass="text-gray-500 dark:text-gray-400"
+                numberClass="font-semibold"
+              />
+            </span>
+          </span>
+        )}
         {/* Line 3 — the gathering's ACTIVE poll (started from an attached
             activity draft): its title + a countdown to the event start (the
             window to vote in). The card tap opens the event page, where the

@@ -3,6 +3,8 @@ from overlapping slots, and the confirm/cancel flow with its capacity gating
 (met / can_confirm / "Full" / freed-on-cancel)."""
 
 import uuid
+
+import pytest
 from datetime import date, timedelta
 
 import psycopg
@@ -17,6 +19,17 @@ from services.slot_events import (
     _set_ok,
 )
 from tests.conftest import TEST_DB_URL, bid_headers
+
+
+@pytest.fixture(autouse=True)
+def _instant_settlement(monkeypatch):
+    """Pin the pre-162 semantics for this suite: with a deadline that is
+    always already past, every key settles on its first confirm, so the party
+    model below (Full / second party / moves) is exercised exactly as before.
+    Deferred settlement has its own suite (test_slot_settlement.py)."""
+    import services.slot_events as se
+
+    monkeypatch.setattr(se, "SETTLE_LEAD_HOURS", 10**6)
 
 
 def _act(base: str) -> str:

@@ -352,6 +352,13 @@ class SlotEventResponse(BaseModel):
     # events (migration 160): 1 = top choice, equal ranks = LINKED (attending
     # both regardless of overlap). Null when never ordered / not confirmed.
     viewer_pref_rank: int | None = None
+    # SETTLEMENT (migration 162). False while the key is unsettled: everyone
+    # who tapped is pooled on this one card, committed to the activity rather
+    # than to a party; the split into parties happens at `settles_at` (UTC
+    # ISO) or sooner once nobody left undecided could change it. `met` then
+    # reads off the provisional split. Settled parties: true / null.
+    settled: bool = True
+    settles_at: str | None = None
 
 
 class SlotEventsResponse(BaseModel):
@@ -365,6 +372,11 @@ class EventConfirmationRequest(BaseModel):
     # Which party to join; omitted/null = the fresh card (join the fullest
     # party that will take the caller, else mint a new one).
     event_id: str | None = None
+    # The caller's IANA zone (migration 162): stamped on a key's intake row
+    # when this confirm mints it, so the settlement deadline — a lead time
+    # off a wall-clock event start — can become an instant. Optional; an
+    # unset/unknown zone reads as UTC.
+    timezone: str | None = None
 
 
 class EventPreferencesRequest(BaseModel):
@@ -405,6 +417,7 @@ def set_event_confirmation_endpoint(req: EventConfirmationRequest, request: Requ
                 activity=req.activity,
                 confirmed=req.confirmed,
                 event_id=req.event_id,
+                timezone_name=req.timezone,
             )
         except NoSuchEventError:
             raise HTTPException(status_code=404, detail="Event not found")
