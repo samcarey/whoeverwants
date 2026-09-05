@@ -201,7 +201,9 @@ def test_deadline_settles_and_splits_into_parties(client):
     _confirm(client, browser_id=b, day=day, activity=act)
     _confirm(client, browser_id=c, day=day, activity=act)
     assert all(e["settled"] is False for e in _events(client, browser_id=a) if e["id"] == intake)
-    assert _settle_now(day) == [intake]
+    # settle_due_keys sweeps EVERY due key on the day (other tests' too) —
+    # this key must be among them, not the only one.
+    assert intake in _settle_now(day)
     # a's cap of 2 → {a, x} + {y}: two settled parties, ranks/ids intact.
     ids = {e["id"] for e in _events(client, browser_id=b) if e["id"]}
     assert intake in ids and len(ids) == 2
