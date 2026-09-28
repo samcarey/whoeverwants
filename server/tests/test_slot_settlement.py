@@ -50,14 +50,38 @@ def test_partition_splits_around_a_maximum_and_prefers_nobody_alone():
     assert "owen" in groups[1]
 
 
-def test_partition_serves_a_minimum_over_a_tight_maximum():
-    # Owen caps at 2, Theo needs 4: the only split that serves everyone is
-    # Owen alone + the four — "fewest left out" outranks "nobody alone".
+def test_partition_serves_a_minimum_and_a_tight_maximum_when_there_is_room():
+    # Owen caps at 2, Theo needs 4, six people: Owen + one, and the four with
+    # Theo — everyone served, whatever the arrival order.
     owen = _cand("owen", max_people=2)
     theo = _cand("theo", min_people=4)
-    rest = [_cand(n) for n in ("maya", "nina", "sam")]
-    groups = sorted((sorted(x.user_id for x in g) for g in _partition([owen, theo] + rest, {}, {})), key=len)
-    assert groups == [["owen"], ["maya", "nina", "sam", "theo"]]
+    rest = [_cand(n) for n in ("maya", "nina", "sam", "pat")]
+    for order in ([owen] + rest + [theo], [theo] + rest + [owen]):
+        groups = sorted((sorted(x.user_id for x in g) for g in _partition(order, {}, {})), key=len)
+        assert [len(g) for g in groups] == [2, 4]
+        assert "owen" in groups[0] and "theo" in groups[1]
+
+
+def test_partition_tie_leaves_out_the_latest_arrival():
+    # Five people, Owen max 2, Theo min 4: both can't be served — someone
+    # misses out either way (4 + Owen alone, or pairs + Theo alone). The tie
+    # goes to seniority: whoever tapped LAST is the one left out. (Scoring a
+    # party of one as "served" once made 4 + Owen-alone look like it served
+    # all five — a lone outing isn't one, with or without a minimum.)
+    owen = _cand("owen", max_people=2)
+    theo = _cand("theo", min_people=4)
+    rest = [_cand(n) for n in ("sam", "maya", "nina")]
+    alone = lambda order: [g[0].user_id for g in _partition(order, {}, {}) if len(g) == 1]
+    assert alone([owen] + rest + [theo]) == ["theo"]
+    assert alone([theo] + rest + [owen]) == ["owen"]
+
+
+def test_partition_puts_the_biggest_party_first():
+    # The intake row (the id everyone's links point at) stays with groups[0].
+    owen = _cand("owen", max_people=2)
+    rest = [_cand(n) for n in ("maya", "nina", "sam", "pat")]
+    groups = _partition([owen] + rest, {}, {})
+    assert [len(g) for g in groups] == [3, 2]
 
 
 def test_partition_respects_exclusions():
@@ -127,35 +151,55 @@ def _settle_now(day):
 
 def test_tight_maximum_tapped_first_no_longer_strands_a_minimum(client):
     """THE case: Owen (max 2) taps first with Sam. Under instant settlement
-    Maya/Nina/Theo were left to form a 3 — and Theo (min 4) got nothing.
-    Pooled + settled later, the engine puts Owen alone and the four together:
-    everyone served."""
+    Owen+Sam locked as a pair and the rest formed a 3 — Theo (min 4) got
+    nothing. Pooled + settled later, Owen still gets a partner and the four
+    (Theo included) go together: everyone served."""
     day = _day(6)
     act = _act("Trivia")
-    owen, sam, maya, nina, theo = (str(uuid.uuid4()) for _ in range(5))
+    owen, sam, maya, nina, pat, theo = (str(uuid.uuid4()) for _ in range(6))
     _mk(client, owen, day, act, max_people=2)
     _mk(client, theo, day, act, min_people=4)
-    for b in (sam, maya, nina):
+    for b in (sam, maya, nina, pat):
         _mk(client, b, day, act)
 
     r = _confirm(client, browser_id=owen, day=day, activity=act)
     assert r.status_code == 200 and r.json()["settled"] is False
     intake = r.json()["id"]
-    for b in (sam, maya, nina):
+    for b in (sam, maya, nina, pat):
         card = _confirm(client, browser_id=b, day=day, activity=act).json()
         assert card["id"] == intake and card["settled"] is False and card["can_confirm"]
     # Theo is NOT locked out by the four already in.
     theo_card = next(e for e in _events(client, browser_id=theo) if e["id"] == intake)
     assert theo_card["can_confirm"] and theo_card["settled"] is False
     card = _confirm(client, browser_id=theo, day=day, activity=act).json()
-    # Everyone has confirmed → settled at once, and the split serves all five.
+    # Everyone has confirmed → settled at once, and the split serves all six.
     assert card["settled"] is True
     theo_cards = _events(client, browser_id=theo)
     mine = next(e for e in theo_cards if e["viewer_confirmed"])
     assert mine["met"] and mine["confirmed_count"] == 4
     owen_cards = _events(client, browser_id=owen)
     owen_mine = next(e for e in owen_cards if e["viewer_confirmed"])
-    assert owen_mine["confirmed_count"] == 1 and owen_mine["met"]  # alone, and that's a met event
+    assert owen_mine["confirmed_count"] == 2 and owen_mine["met"]
+    # The intake id (everyone's open links) stays with the biggest group.
+    assert mine["id"] == intake
+
+
+def test_a_late_tap_never_bumps_an_earlier_one_out(client):
+    """Five people, Owen (max 2) in first, Theo (min 4) last: someone must
+    miss out. It's Theo — his tap doesn't push Owen into going alone."""
+    day = _day(6)
+    act = _act("Karaoke")
+    owen, sam, maya, nina, theo = (str(uuid.uuid4()) for _ in range(5))
+    _mk(client, owen, day, act, max_people=2)
+    _mk(client, theo, day, act, min_people=4)
+    for b in (sam, maya, nina):
+        _mk(client, b, day, act)
+    for b in (owen, sam, maya, nina, theo):
+        _confirm(client, browser_id=b, day=day, activity=act)
+    owen_mine = next(e for e in _events(client, browser_id=owen) if e["viewer_confirmed"])
+    assert owen_mine["settled"] is True and owen_mine["confirmed_count"] == 2 and owen_mine["met"]
+    theo_mine = next(e for e in _events(client, browser_id=theo) if e["viewer_confirmed"])
+    assert theo_mine["confirmed_count"] == 1 and not theo_mine["met"]
 
 
 def test_monotone_pool_settles_on_first_confirm(client):

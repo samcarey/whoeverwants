@@ -600,19 +600,38 @@ def _load_confirmations(conn, days: list[str]) -> dict[tuple[str, str], dict[str
 
 def _load_intake(conn, days: list[str]) -> dict[tuple[str, str], dict]:
     """(day, activity_key) → the key's UNSETTLED intake row (migration 162):
-    {"id", "tz"}. Confirmations there are pooled — parties not yet decided.
-    A key has at most one; a settled key has none."""
+    {"id", "tz", "order"}. Confirmations there are pooled — parties not yet
+    decided. `order` is {user_id: arrival index} (earliest tap = 0): the
+    partition's seniority tiebreak. A key has at most one; a settled key has
+    none."""
     if not days:
         return {}
     rows = conn.execute(
         """
-        SELECT e.id, e.day::text AS day, LOWER(e.activity) AS key, e.settle_tz
+        SELECT e.id, e.day::text AS day, LOWER(e.activity) AS key, e.settle_tz,
+               ARRAY_REMOVE(ARRAY_AGG(c.user_id::text ORDER BY c.created_at, c.user_id), NULL) AS seq
           FROM slot_events e
+          LEFT JOIN slot_event_confirmations c ON c.event_id = e.id
          WHERE e.day = ANY(%(days)s::date[]) AND e.settled_at IS NULL
+         GROUP BY e.id
         """,
         {"days": days},
     ).fetchall()
-    return {(r["day"], r["key"]): {"id": str(r["id"]), "tz": r["settle_tz"]} for r in rows}
+    return {
+        (r["day"], r["key"]): {
+            "id": str(r["id"]),
+            "tz": r["settle_tz"],
+            "order": {u: i for i, u in enumerate(r["seq"] or [])},
+        }
+        for r in rows
+    }
+
+
+def _by_arrival(cands, order: dict[str, int] | None) -> list[_Candidate]:
+    """Candidates earliest-tap first (user_id breaks ties / unknowns last) —
+    the order _partition reads seniority from."""
+    order = order or {}
+    return sorted(cands, key=lambda c: (order.get(c.user_id, len(order)), c.user_id))
 
 
 def _load_ranks(conn, days: list[str]) -> dict[str, dict[str, int]]:
@@ -904,9 +923,13 @@ def _partition(
     confirmed: list[_Candidate], members: dict[str, set[str]], blocked: dict[str, set[str]]
 ) -> list[list[_Candidate]]:
     """Split a confirmed set into valid parties, best first by:
-      1. the most people in a MET party (fewest left out),
+      1. the most people in a MET party of 2+ (fewest left out — a party of
+         one is not an outing, even with no minimum),
       2. the fewest people alone,
-      3. the largest single party.
+      3. seniority: if someone must be left out, it's the latest arrivals —
+         a later tap never bumps an earlier one out of an equally good split,
+      4. the largest single party.
+    `confirmed` must be in ARRIVAL order (earliest first; see _by_arrival).
     Exact bitmask DP up to SETTLE_SOLVER_CAP people (set validity memoised
     per subset, so it's 2^n _set_ok calls), greedy beyond. Singletons are
     always admissible — everyone lands in exactly one party; whether it's
@@ -927,22 +950,34 @@ def _partition(
         ok = len(grp) == 1 or _set_ok(grp, members, blocked, require_min=False)
         valid[mask] = ok
         if ok:
-            served[mask] = len(grp) if _set_ok(grp, members, blocked, require_min=True) else 0
+            served[mask] = (
+                len(grp) if len(grp) >= 2 and _set_ok(grp, members, blocked, require_min=True) else 0
+            )
         return ok
 
     full = (1 << n) - 1
-    best: dict[int, tuple[tuple[int, int, int], list[int]]] = {0: ((0, 0, 0), [])}
+    # Leaving out person i costs 2^(n-1-i): protecting the earliest arrival
+    # outweighs everyone after them combined (lexicographic seniority).
+    def cost(mask: int) -> int:
+        return sum(1 << (n - 1 - i) for i in range(n) if mask >> i & 1)
+
+    best: dict[int, tuple[tuple[int, int, int, int], list[int]]] = {0: ((0, 0, 0, 0), [])}
     for mask in range(1, full + 1):
         low = mask & -mask
         rest = mask ^ low
-        cur: tuple[tuple[int, int, int], list[int]] | None = None
+        cur: tuple[tuple[int, int, int, int], list[int]] | None = None
         sub = rest
         while True:
             g = sub | low
             if check(g):
                 sc, groups = best[mask ^ g]
                 size = bin(g).count("1")
-                score = (sc[0] + served[g], sc[1] - (1 if size == 1 else 0), max(sc[2], size))
+                score = (
+                    sc[0] + served[g],
+                    sc[1] - (1 if size == 1 else 0),
+                    sc[2] - (0 if served[g] else cost(g)),
+                    max(sc[3], size),
+                )
                 if cur is None or score > cur[0]:
                     cur = (score, groups + [g])
             if sub == 0:
@@ -950,6 +985,9 @@ def _partition(
             sub = (sub - 1) & rest
         best[mask] = cur  # type: ignore[assignment]  # the singleton is always valid
     _, gmasks = best[full]
+    # Biggest outing first: the intake row (the id everyone's open pages and
+    # links point at) stays with it.
+    gmasks.sort(key=lambda g: (-served[g], -bin(g).count("1"), g & -g))
     return [[confirmed[i] for i in range(n) if g >> i & 1] for g in gmasks]
 
 
@@ -1043,7 +1081,7 @@ def settle_due_keys(conn, days: list[str], now=None) -> list[str]:
             now, _settle_deadline(day, cands, row["tz"]), cands, confirmed, members, blocked
         ):
             continue
-        groups = _partition(sorted((cands[u] for u in confirmed), key=lambda c: c.user_id), members, blocked)
+        groups = _partition(_by_arrival((cands[u] for u in confirmed), row.get("order")), members, blocked)
         conn.execute(
             "UPDATE slot_events SET settled_at = %(n)s WHERE id = %(e)s::uuid",
             {"n": now, "e": eid},
@@ -1079,6 +1117,7 @@ def _intake_payload(
     confirmed_uids: set[str],
     standby: set[tuple[str, str]],
     settles_at,
+    order: dict[str, int] | None = None,
 ) -> dict | None:
     """The ONE card an unsettled key shows: everyone who tapped is "in" for
     the activity, pooled. `met` is read off the provisional split —
@@ -1091,7 +1130,7 @@ def _intake_payload(
     viewer_confirmed = viewer_id in conf_ids
     active_ids = {u for u in conf_ids if (intake_id, u) not in standby}
     viewer_standby = viewer_confirmed and viewer_id not in active_ids
-    active = sorted((cands[u] for u in active_ids), key=lambda c: c.user_id)
+    active = _by_arrival((cands[u] for u in active_ids), order)
     others = [c for c in cands.values() if c.user_id != viewer_id]
     viable = _preferred_viable_start(viewer, others, members, blocked)
     if not viewer_confirmed and viable is None:
@@ -1157,6 +1196,7 @@ def _cards_for_key(
             day, cands, viewer_id, members, blocked,
             intake_id=intake["id"], confirmed_uids=conf, standby=standby,
             settles_at=_settle_deadline(day, cands, intake["tz"]),
+            order=intake.get("order"),
         )
         cards = [card] if card is not None else []
         if not cards:

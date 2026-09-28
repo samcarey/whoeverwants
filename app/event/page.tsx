@@ -31,7 +31,7 @@
  * chrome; the template's fallback header is suppressed via isEventPage).
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePageReady } from "@/lib/usePageReady";
 import { navigateWithTransition } from "@/lib/viewTransitions";
@@ -159,18 +159,41 @@ function EventPageInner() {
     };
   }, [refresh]);
 
-  // The card being viewed: the named party when it still exists, else the
-  // viewer's own party of this key, else the key's fresh card — so a Back Out
-  // that dissolves a party lands on "I'm In again" instead of a dead end.
+  // The card being viewed: the viewer's OWN party of this key when the named
+  // one isn't theirs (a pool that just settled can split them into a new
+  // party row — the page follows them there rather than stranding them on
+  // someone else's group), else the named party, else the key's fresh card —
+  // so a Back Out that dissolves a party lands on "I'm In again" instead of a
+  // dead end.
   const ev = useMemo(() => {
     const matching = events.filter((e) => e.day === day && e.activity.trim().toLowerCase() === key);
-    return (
-      (partyId && matching.find((e) => e.id === partyId)) ||
-      matching.find((e) => e.viewer_confirmed) ||
-      matching[0] ||
-      null
-    );
+    const named = partyId ? matching.find((e) => e.id === partyId) : undefined;
+    const own = matching.find((e) => e.viewer_confirmed);
+    return (named?.viewer_confirmed ? named : own) || named || matching[0] || null;
   }, [events, day, key, partyId]);
+
+  // Keep the URL on the card actually shown (a followed split, a dissolved
+  // party) so a reload or share lands on the same group.
+  useEffect(() => {
+    if (!ev?.id || !partyId || ev.id === partyId) return;
+    const q = new URLSearchParams(params.toString());
+    q.set("id", ev.id);
+    router.replace(`/event?${q.toString()}`, { scroll: false });
+  }, [ev?.id, partyId, params, router]);
+
+  // "Groups are set" — shown once when the viewer watched their pooled card
+  // settle (same id flipping settled, or being followed into a new party).
+  const lastSeen = useRef<{ id: string; unsettled: boolean } | null>(null);
+  const [settledNote, setSettledNote] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!ev) return;
+    const prev = lastSeen.current;
+    const unsettledNow = ev.settled === false;
+    if (prev?.unsettled && !unsettledNow && ev.viewer_confirmed) {
+      setSettledNote(ev.confirmed_names ?? []);
+    }
+    lastSeen.current = { id: ev.id ?? "", unsettled: unsettledNow };
+  }, [ev]);
 
   // Which of the poll's clocks is running, for the Polls header line. A live
   // suggestion phase wins (it closes first, and it's what's actionable);
@@ -413,6 +436,18 @@ function EventPageInner() {
                     Full — someone would be left out if you joined
                   </div>
                 )}
+                {settledNote && !unsettled && (
+                  <p className="mt-2 rounded-xl bg-green-50 px-3 py-2 text-[13px] text-green-800 dark:bg-green-900/30 dark:text-green-200">
+                    Groups are set.{" "}
+                    {settledNote.length > 0
+                      ? `You're with ${
+                          settledNote.length === 1
+                            ? settledNote[0]
+                            : `${settledNote.slice(0, -1).join(", ")} and ${settledNote[settledNote.length - 1]}`
+                        }.`
+                      : "You're in a group of your own for now."}
+                  </p>
+                )}
                 {/* Settlement note (migration 162): the pooled-confirmations
                     state, spelled out — who goes with whom is decided later,
                     and "You're going!" above means a group that works for
@@ -428,8 +463,8 @@ function EventPageInner() {
                       colorClass="text-gray-700 dark:text-gray-200"
                       numberClass="font-semibold"
                     />{" "}
-                    — or sooner, once no one else could change it. Nobody gets
-                    squeezed out for tapping late.
+                    — or sooner, once no one else could change it. The split
+                    fits in as many people as it can.
                   </p>
                 )}
               </div>
