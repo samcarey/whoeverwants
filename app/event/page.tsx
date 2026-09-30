@@ -304,11 +304,12 @@ function EventPageInner() {
   const pending = !!ev && ev.viewer_confirmed && !ev.met && !backup;
   // NEAR-MISS: no viable gathering yet — "Needs N more" instead of Full.
   const short = !!ev && !ev.viewer_confirmed && (ev.needed ?? 0) > 0;
-  // UNSETTLED (migration 162): confirmations are pooled and nobody is gated
-  // against the people already in, so there is no Full to show — only the
-  // settlement note below the action.
+  // UNSETTLED (migration 162): confirmations are pooled until the split is
+  // decided (the settlement note below the action). Full still applies, per
+  // person: the pool has no room for THIS viewer without leaving out someone
+  // already in — it can clear as more people become available.
   const unsettled = !!ev && ev.settled === false;
-  const full = !!ev && !ev.viewer_confirmed && !ev.can_confirm && !short && !unsettled;
+  const full = !!ev && !ev.viewer_confirmed && !ev.can_confirm && !short;
   const statusPill = going ? (
     <span className="rounded-full bg-green-600 px-3 py-1 text-sm font-medium text-white">You&apos;re going!</span>
   ) : backup ? (
@@ -452,7 +453,7 @@ function EventPageInner() {
                     state, spelled out — who goes with whom is decided later,
                     and "You're going!" above means a group that works for
                     you exists in the current split. */}
-                {unsettled && ev.settles_at && (
+                {unsettled && !full && ev.settles_at && (
                   <p className="mt-2 rounded-xl bg-gray-50 px-3 py-2 text-[13px] text-gray-600 dark:bg-gray-800/60 dark:text-gray-300">
                     Everyone who&apos;s in is pooled for now. If people&apos;s limits
                     mean this has to split into groups, that&apos;s decided in{" "}

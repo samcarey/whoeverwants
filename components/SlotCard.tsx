@@ -172,7 +172,9 @@ function EventCard({
   // against the people already in — so "Full" can't apply; the card carries
   // a "groups settle in …" line instead.
   const unsettled = ev.settled === false;
-  const full = !ev.viewer_confirmed && !ev.can_confirm && !unsettled;
+  // Full is per-person, pooled or not: no split has room for this viewer
+  // without leaving out someone already in.
+  const full = !ev.viewer_confirmed && !ev.can_confirm;
   // Everyone confirmed except the viewer (the server already leaves them out
   // of confirmed_names; confirmed_count counts them — unless the viewer is
   // standby, in which case the count already excludes them).
@@ -280,7 +282,7 @@ function EventCard({
             people in are pooled and the split into groups is still to come —
             say when, so a "3 in" that later becomes two cards isn't a
             surprise. The countdown is the deadline; it can settle earlier. */}
-        {unsettled && ev.settles_at && (
+        {unsettled && !full && ev.settles_at && (
           <span className="flex items-center gap-1 min-w-0 text-[11px] font-normal text-gray-500 dark:text-gray-400">
             <span className="min-w-0 truncate">Groups settle in</span>
             <span className="ml-auto shrink-0 tabular-nums">

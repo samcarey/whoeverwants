@@ -128,9 +128,36 @@ def test_should_settle_when_no_latecomer_could_share_a_party():
     # party, so the confirmed split is safe to decide now.
     cands = _pool(_cand("a", max_people=2), _cand("b"), _cand("d", windows=((1200, 1300),)))
     assert _should_settle(NOW, LATER, cands, {"a", "b"}, {}, {})
-    # ...but a compatible latecomer holds it open — saturation is NOT safety.
-    cands = _pool(_cand("a", max_people=2), _cand("b"), _cand("c"))
+    # ...but a latecomer who could still get in holds it open — c and d can
+    # make a second pair, so saturation is NOT safety.
+    cands = _pool(_cand("a", max_people=2), _cand("b"), _cand("c"), _cand("d"))
     assert not _should_settle(NOW, LATER, cands, {"a", "b"}, {}, {})
+
+
+def test_should_settle_when_the_pool_is_full_for_every_latecomer():
+    # a (max 2) + b fill a's cap, and c alone can't make a party: the pool is
+    # Full for c, so c's possible tap can't change anything.
+    cands = _pool(_cand("a", max_people=2), _cand("b"), _cand("c"))
+    assert _should_settle(NOW, LATER, cands, {"a", "b"}, {}, {})
+
+
+# ---------------------------------------------------------------- per-person Full
+
+def test_admissible_is_per_person_and_counts_possible_latecomers():
+    owen = _cand("owen", max_people=2)
+    theo = _cand("theo", min_people=4)
+    rest = [_cand(n) for n in ("sam", "maya", "nina")]
+    cands = _pool(owen, theo, *rest)
+    order = {"owen": 0, "sam": 1, "maya": 2, "nina": 3}
+    confirmed = set(order)
+    # Theo: no split fits him without sending Owen off alone → Full.
+    assert not se._admissible("theo", cands, confirmed, order, {}, {})
+    # One more available friend makes Owen + them and a four with Theo
+    # possible → Theo may join (before that friend has even tapped).
+    dana = _cand("dana")
+    assert se._admissible("theo", {**cands, "dana": dana}, confirmed, order, {}, {})
+    # And the first tap of an activity is never Full for want of company.
+    assert se._admissible("sam", cands, set(), {}, {}, {})
 
 
 # ---------------------------------------------------------------- API
@@ -185,8 +212,9 @@ def test_tight_maximum_tapped_first_no_longer_strands_a_minimum(client):
 
 
 def test_a_late_tap_never_bumps_an_earlier_one_out(client):
-    """Five people, Owen (max 2) in first, Theo (min 4) last: someone must
-    miss out. It's Theo — his tap doesn't push Owen into going alone."""
+    """Five people, Owen (max 2) in first, Theo (min 4) last: there's no room
+    for Theo without sending Owen off alone, so the pool is FULL for Theo —
+    and only for him — and it settles without waiting on his tap."""
     day = _day(6)
     act = _act("Karaoke")
     owen, sam, maya, nina, theo = (str(uuid.uuid4()) for _ in range(5))
@@ -194,12 +222,36 @@ def test_a_late_tap_never_bumps_an_earlier_one_out(client):
     _mk(client, theo, day, act, min_people=4)
     for b in (sam, maya, nina):
         _mk(client, b, day, act)
-    for b in (owen, sam, maya, nina, theo):
-        _confirm(client, browser_id=b, day=day, activity=act)
+    for b in (owen, sam, maya):
+        card = _confirm(client, browser_id=b, day=day, activity=act).json()
+        assert card["settled"] is False
+    # Theo sees Full; Nina (still undecided) doesn't.
+    theo_card = next(e for e in _events(client, browser_id=theo) if e["activity"] == act)
+    assert not theo_card["can_confirm"] and not theo_card["viewer_confirmed"]
+    nina_card = next(e for e in _events(client, browser_id=nina) if e["activity"] == act)
+    assert nina_card["can_confirm"]
+    assert _confirm(client, browser_id=theo, day=day, activity=act).status_code == 409
+    # Nina is the last one who could change the split → settles on her tap.
+    assert _confirm(client, browser_id=nina, day=day, activity=act).json()["settled"] is True
     owen_mine = next(e for e in _events(client, browser_id=owen) if e["viewer_confirmed"])
-    assert owen_mine["settled"] is True and owen_mine["confirmed_count"] == 2 and owen_mine["met"]
-    theo_mine = next(e for e in _events(client, browser_id=theo) if e["viewer_confirmed"])
-    assert theo_mine["confirmed_count"] == 1 and not theo_mine["met"]
+    assert owen_mine["confirmed_count"] == 2 and owen_mine["met"]
+
+
+def test_full_clears_when_another_friend_becomes_available(client):
+    day = _day(6)
+    act = _act("Bowling")
+    owen, sam, maya, nina, theo, dana = (str(uuid.uuid4()) for _ in range(6))
+    _mk(client, owen, day, act, max_people=2)
+    _mk(client, theo, day, act, min_people=4)
+    for b in (sam, maya, nina):
+        _mk(client, b, day, act)
+    for b in (owen, sam, maya):
+        _confirm(client, browser_id=b, day=day, activity=act)
+    theo_card = lambda: next(e for e in _events(client, browser_id=theo) if e["activity"] == act)
+    assert not theo_card()["can_confirm"]
+    _mk(client, dana, day, act)  # Dana adds the same activity
+    assert theo_card()["can_confirm"]
+    assert _confirm(client, browser_id=theo, day=day, activity=act).status_code == 200
 
 
 def test_monotone_pool_settles_on_first_confirm(client):

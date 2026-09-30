@@ -1020,6 +1020,42 @@ def _settle_deadline(day: str, cands: dict[str, _Candidate], tz_name: str | None
     return inst - timedelta(hours=SETTLE_LEAD_HOURS)
 
 
+def _served_ids(groups: list[list[_Candidate]], members, blocked) -> set[str]:
+    """Who a split actually serves: members of a MET party of 2+."""
+    out: set[str] = set()
+    for g in groups:
+        if len(g) >= 2 and _set_ok(g, members, blocked, require_min=True):
+            out.update(c.user_id for c in g)
+    return out
+
+
+def _admissible(
+    viewer_id: str,
+    cands: dict[str, _Candidate],
+    confirmed: set[str],
+    order: dict[str, int] | None,
+    members: dict[str, set[str]],
+    blocked: dict[str, set[str]],
+) -> bool:
+    """May `viewer_id` join this unsettled pool — or is it FULL for them?
+    They're in if some split serves them without leaving out anyone the
+    current split already serves, counting everyone still undecided as a
+    possible later arrival (so the first tap of an activity isn't "Full" for
+    want of company, and a Full clears the moment an extra person makes a
+    second group possible). Arrivals after the viewer queue behind them, so
+    seniority protects the viewer over those, never over people already in.
+    Full is therefore per-person: the same pool can be open to one friend
+    and full to another."""
+    conf = _by_arrival((cands[u] for u in confirmed if u in cands and u != viewer_id), order)
+    rest = sorted(
+        (c for u, c in cands.items() if u not in confirmed and u != viewer_id),
+        key=lambda c: c.user_id,
+    )
+    before = _served_ids(_partition(conf, members, blocked), members, blocked) if conf else set()
+    after = _served_ids(_partition(conf + [cands[viewer_id]] + rest, members, blocked), members, blocked)
+    return viewer_id in after and before <= after
+
+
 def _should_settle(
     now,
     deadline,
@@ -1027,14 +1063,15 @@ def _should_settle(
     confirmed: set[str],
     members: dict[str, set[str]],
     blocked: dict[str, set[str]],
+    order: dict[str, int] | None = None,
 ) -> bool:
     """Is it safe to turn the pooled confirmations into parties now? Yes when
     the deadline passed, when growth is monotone for the whole pool, when
-    everyone has confirmed, or when no undecided candidate could ever share a
-    party with anyone confirmed (their arrival can only start a separate
-    party). Deliberately conservative — a pair-wise check, not a search over
-    every subset of latecomers — because a wrong "safe" is the original bug
-    again; the deadline is the backstop."""
+    everyone has confirmed, or when nobody undecided could still join: none
+    can share a party with anyone confirmed (their arrival can only start a
+    separate party), or the pool is FULL for every one of them (_admissible)
+    — a Full friend's possible tap can't change the split, so it mustn't hold
+    it open. The deadline is the backstop."""
     if now >= deadline:
         return True
     if _pool_is_monotone(cands, members, blocked):
@@ -1045,11 +1082,13 @@ def _should_settle(
     conf = [cands[u] for u in confirmed if u in cands]
     if not conf:
         return False
-    for u in undecided:
-        for c in conf:
-            if _set_ok([u, c], members, blocked, require_min=False):
-                return False
-    return True
+    could_share = [
+        u for u in undecided
+        if any(_set_ok([u, c], members, blocked, require_min=False) for c in conf)
+    ]
+    return not any(
+        _admissible(u.user_id, cands, confirmed, order, members, blocked) for u in could_share
+    )
 
 
 def settle_due_keys(conn, days: list[str], now=None) -> list[str]:
@@ -1078,7 +1117,8 @@ def settle_due_keys(conn, days: list[str], now=None) -> list[str]:
         eid = row["id"]
         confirmed = {u for u in confirmations.get((day, key), {}).get(eid, set()) if u in cands}
         if cands and not _should_settle(
-            now, _settle_deadline(day, cands, row["tz"]), cands, confirmed, members, blocked
+            now, _settle_deadline(day, cands, row["tz"]), cands, confirmed, members, blocked,
+            row.get("order"),
         ):
             continue
         groups = _partition(_by_arrival((cands[u] for u in confirmed), row.get("order")), members, blocked)
@@ -1135,6 +1175,9 @@ def _intake_payload(
     viable = _preferred_viable_start(viewer, others, members, blocked)
     if not viewer_confirmed and viable is None:
         return None
+    # Full is per-person: a viable pool can still have no room for THIS
+    # viewer without leaving out someone already in.
+    can_join = viewer_confirmed or _admissible(viewer_id, cands, active_ids, order, members, blocked)
     groups = _partition(active, members, blocked) if active else []
     mine = next((g for g in groups if any(c.user_id == viewer_id for c in g)), None)
     if viewer_confirmed and not viewer_standby:
@@ -1159,7 +1202,7 @@ def _intake_payload(
         "confirmed_count": len(active),
         "confirmed_names": sorted((c.name or "Someone") for c in active if c.user_id != viewer_id),
         "viewer_confirmed": viewer_confirmed,
-        "can_confirm": True if viewer_confirmed else viable is not None,
+        "can_confirm": can_join,
         "met": met,
         "standby": viewer_standby,
         "needed": 0,
@@ -1422,11 +1465,16 @@ def set_confirmation(
     target: str | None = None
     if confirmed:
         if intake is not None and (event_id is None or event_id == intake["id"]):
-            # Unsettled: commit to the activity. The only gate is viability.
-            if user_id not in valid.get(intake["id"], set()) and (
-                _preferred_viable_start(cands[user_id], others, members, blocked) is None
-            ):
-                raise EventFullError()
+            # Unsettled: commit to the activity — unless the pool is Full for
+            # this caller (no split serves them without leaving out someone
+            # already in; see _admissible).
+            pooled = valid.get(intake["id"], set())
+            if user_id not in pooled:
+                active = {u for u in pooled if (intake["id"], u) not in standby}
+                if _preferred_viable_start(cands[user_id], others, members, blocked) is None or not (
+                    _admissible(user_id, cands, active, intake.get("order"), members, blocked)
+                ):
+                    raise EventFullError()
             target = intake["id"]
         elif event_id is not None:
             if event_id not in parties:
