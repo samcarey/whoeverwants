@@ -118,9 +118,9 @@ def test_should_settle_at_once_when_the_pool_is_monotone():
 
 
 def test_should_settle_once_everyone_confirmed():
-    cands = _pool(_cand("a", max_people=2), _cand("b"), _cand("c"))
-    assert not _should_settle(NOW, LATER, cands, {"a", "b"}, {}, {})
-    assert _should_settle(NOW, LATER, cands, {"a", "b", "c"}, {}, {})
+    cands = _pool(_cand("a", max_people=2), _cand("b"), _cand("c"), _cand("d"))
+    assert not _should_settle(NOW, LATER, cands, {"a", "b", "c"}, {}, {})
+    assert _should_settle(NOW, LATER, cands, {"a", "b", "c", "d"}, {}, {})
 
 
 def test_should_settle_when_no_latecomer_could_share_a_party():
